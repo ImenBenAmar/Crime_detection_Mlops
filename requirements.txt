@@ -1,9 +1,11 @@
 pandas
 matplotlib
 seaborn
-<<<<<<< HEAD
 numpy
 scikit-learn
 datetime
-=======
->>>>>>> cda94000232421fb710dc576d26e5beb685f66f2
+plotly
+lightgbm
+xgboost
+catboost
+tabulate
