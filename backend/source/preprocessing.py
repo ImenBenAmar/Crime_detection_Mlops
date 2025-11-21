@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 import re
+import os
+import pickle
 from sklearn.preprocessing import LabelEncoder
 
 def categorize_crime(crime):
@@ -83,17 +85,19 @@ def categorize_crime(crime):
     return 'جرائم متنوعة / Miscellaneous Crimes'
 
 
-def preprocess_data(df_raw):
+def preprocess_data(df_raw, save_artifacts=True, artifacts_path="processors"):
     """
     Exécute le pipeline complet de nettoyage et de feature engineering.
     
     Args:
         df_raw (pd.DataFrame): Le dataframe brut chargé depuis le CSV.
+        save_artifacts (bool): Si True, sauvegarde les données et encodeurs sur le disque.
+        artifacts_path (str): Chemin du dossier où sauvegarder les artefacts.
         
     Returns:
         X (pd.DataFrame): Features processées.
         y (pd.Series): Target encodée.
-        encoders (dict): Dictionnaire contenant les LabelEncoders entraînés (utile pour l'inférence/MLflow).
+        encoders (dict): Dictionnaire contenant les LabelEncoders entraînées.
     """
     # Copie pour éviter les warnings de modification
     df = df_raw.copy()
@@ -157,7 +161,6 @@ def preprocess_data(df_raw):
         df['premis_desc'] = df['premis_desc'].str.replace(r'\s+', ' ', regex=True)
 
     # --- 7. Suppression de colonnes inutiles ou trop vides ---
-    # Suppression statique basée sur l'analyse EDA (>50% vide)
     cols_to_drop = ['crm_cd_1', 'crm_cd_2', 'crm_cd_3', 'crm_cd_4', 'cross_street']
     df.drop(columns=[c for c in cols_to_drop if c in df.columns], inplace=True)
 
@@ -184,7 +187,7 @@ def preprocess_data(df_raw):
         'crm_cd', 'vict_age', 'Vict_Descent_LE',
         'premis_cd', 'weapon_used_cd', 'lat', 'lon'
     ]
-    # Ajouter dynamiquement les colonnes issues du One-Hot Encoding (vict_sex_X, etc.)
+    # Ajouter dynamiquement les colonnes issues du One-Hot Encoding
     vict_sex_cols = [col for col in df.columns if col.startswith('vict_sex_')]
     cols_to_keep += vict_sex_cols
 
@@ -192,10 +195,57 @@ def preprocess_data(df_raw):
     X = df[cols_to_keep].copy()
     y = df['Crime_Class_Enc']
 
-    # Dictionnaire des encodeurs pour sauvegarde ultérieure avec MLflow
+    # Dictionnaire des encodeurs
     encoders = {
         'le_descent': le_descent,
         'le_target': le_target
     }
+
+    # --- 11. Sauvegarde optionnelle (Code demandé) ---
+    if save_artifacts:
+        print("\n" + "=" * 80)
+        print("SAUVEGARDE POUR L'ÉTAPE DE MODELING")
+        print("=" * 80)
+
+        os.makedirs(artifacts_path, exist_ok=True)
+
+        # Identifier les colonnes numériques pour le scaling futur
+        numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
+
+        # A. Sauvegarder X et y
+        data_package = {
+            "X": X,
+            "y": y,
+            "numeric_cols": numeric_cols,
+            "categorical_cols": [c for c in X.columns if c not in numeric_cols]
+        }
+        with open(os.path.join(artifacts_path, "data_for_modeling.pkl"), "wb") as f:
+            pickle.dump(data_package, f)
+        print("✓ Données X et y sauvegardées (brutes, prêtes pour optimisation)")
+
+        # B. Sauvegarder le LabelEncoder de la cible
+        with open(os.path.join(artifacts_path, "label_encoder_target.pkl"), "wb") as f:
+            pickle.dump(le_target, f)
+        print("✓ LabelEncoder de la cible sauvegardé")
+
+        # C. Sauvegarder le mapping cible (lisible)
+        target_mapping = {
+            "classes": list(le_target.classes_),
+            "mapping": {cls: int(le_target.transform([cls])[0]) for cls in le_target.classes_}
+        }
+        with open(os.path.join(artifacts_path, "target_mapping.pkl"), "wb") as f:
+            pickle.dump(target_mapping, f)
+        print("✓ Mapping cible (Dictionnaire) sauvegardé")
+
+        # D. Sauvegarder la config des features
+        feature_config = {
+            "final_features": list(X.columns),
+            "target_name": "Crime_Class_Enc"
+        }
+        with open(os.path.join(artifacts_path, "features_config.pkl"), "wb") as f:
+            pickle.dump(feature_config, f)
+        print("✓ Configuration des colonnes sauvegardée")
+
+        print("\n🚀 PRÊT POUR LE MODELING ! Vous pouvez passer au notebook suivant.")
 
     return X, y, encoders

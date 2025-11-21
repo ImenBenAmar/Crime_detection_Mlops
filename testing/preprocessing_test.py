@@ -15,7 +15,7 @@ try:
 except ImportError as e:
     pytest.fail(f"ERREUR CRITIQUE : Impossible d'importer 'preprocessing' depuis {source_dir}. Détail : {e}")
 
-# --- FIXTURE (Remplace le setUp) ---
+# --- FIXTURE (Données de test) ---
 @pytest.fixture
 def df_raw():
     """
@@ -33,14 +33,17 @@ def df_raw():
         'Crm Cd': [510, 330, 624, 510, 740],
         'Crm Cd Desc': ['VEHICLE - STOLEN', 'BURGLARY FROM VEHICLE', 'BATTERY - SIMPLE ASSAULT', 'VEHICLE - STOLEN', 'VANDALISM - FELONY'],
         'Mocodes': ['0100', np.nan, '0200', '0100', '0300'],
+        # Cas limites pour le sexe : 'H', '-' et NaN doivent devenir 'X'
         'Vict Age': [25, 30, 35, 40, 45],
         'Vict Sex': ['M', 'F', '-', np.nan, 'H'],
         'Vict Descent': ['H', 'W', '-', np.nan, 'B'],
         'Premis Cd': [101.0, 102.0, np.nan, 101.0, 103.0],
         'Premis Desc': ['STREET', 'SIDEWALK', np.nan, 'STREET', 'PARKING LOT'],
+        # Cas limites pour les armes : NaN doit devenir 0.0 ou 'NO WEAPON'
         'Weapon Used Cd': [np.nan, 400.0, np.nan, np.nan, 500.0],
         'Weapon Desc': [np.nan, 'STRONG-ARM', np.nan, np.nan, 'UNKNOWN WEAPON'],
         'Status': ['AA', 'IC', 'AO', 'AA', np.nan],
+        # Colonnes à supprimer
         'Crm Cd 1': [510.0, 330.0, 624.0, 510.0, 740.0],
         'Crm Cd 2': [np.nan, np.nan, np.nan, np.nan, np.nan],
         'Crm Cd 3': [np.nan, np.nan, np.nan, np.nan, np.nan],
@@ -74,6 +77,7 @@ def test_preprocess_data_columns_drop(df_raw):
     """Vérifie que les colonnes inutiles sont bien supprimées."""
     X, y, encoders = preprocess_data(df_raw)
     
+    # Note: 'dr_no' est converti en minuscule par le script avant d'être supprimé
     dropped_cols = ['dr_no', 'crm_cd_1', 'crm_cd_2', 'crm_cd_3', 'crm_cd_4', 'cross_street']
     
     for col in dropped_cols:
@@ -92,22 +96,22 @@ def test_preprocess_data_date_features(df_raw):
     assert 'Weekday' not in X.columns
     assert 'is_weekend' not in X.columns
 
-    # Vérification de la valeur
+    # Vérification de la valeur (1ère ligne = 2023)
     assert X['Year'].iloc[0] == 2023
 
 def test_preprocess_data_missing_values(df_raw):
     """Vérifie que les valeurs manquantes critiques sont gérées."""
     X, y, encoders = preprocess_data(df_raw)
     
-    # Vérification qu'il n'y a plus de NaN dans ces colonnes
+    # Les colonnes numériques ne doivent pas avoir de NaN
     assert not X['premis_cd'].isnull().any()
     assert not X['weapon_used_cd'].isnull().any()
     
-    # Vérification spécifique (Ligne 0 : Weapon était NaN -> devient 0.0)
+    # Vérification spécifique : la ligne 0 avait NaN pour l'arme, doit être 0.0
     assert X['weapon_used_cd'].iloc[0] == 0.0
 
 def test_preprocess_data_encoding(df_raw):
-    """Vérifie l'encodage (One-Hot et Label)."""
+    """Vérifie le One-Hot Encoding du sexe et le Label Encoding de la cible"""
     X, y, encoders = preprocess_data(df_raw)
     
     # One-Hot Encoding : Sexe (M, F, X attendus)
@@ -126,7 +130,7 @@ def test_preprocess_data_encoding(df_raw):
     assert pd.api.types.is_integer_dtype(y)
 
 def test_preprocess_data_shape(df_raw):
-    """Vérifie la dimension finale."""
+    """Vérifie la dimension finale"""
     X, y, encoders = preprocess_data(df_raw)
     assert X.shape[0] == 5
     assert y.shape[0] == 5
