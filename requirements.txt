@@ -4,5 +4,3 @@ seaborn
 numpy
 scikit-learn
 datetime
-=======
->>>>>>> cda94000232421fb710dc576d26e5beb685f66f2
