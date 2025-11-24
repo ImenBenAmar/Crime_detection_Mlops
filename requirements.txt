@@ -4,3 +4,11 @@ seaborn
 numpy
 scikit-learn
 datetime
+xgboost
+lightgbm
+catboost
+jinja2
+pytest
+mlflow>=2,<3
+dagshub
+dotenv

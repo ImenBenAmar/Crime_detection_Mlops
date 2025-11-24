@@ -1,1 +1,2 @@
 python -m pytest c:/Users/yomna/Downloads/Projet_MLOPS/testing/preprocessing_test.py 
+.\env\Scripts\Activate
