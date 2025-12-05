@@ -3,106 +3,56 @@ import numpy as np
 import re
 import os
 import pickle
-from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, RobustScaler
+
+# ==========================================
+# CONFIGURATION
+# ==========================================
+ARTIFACTS_PATH = "processors"
+DATA_PATH = "data/crime_v1.csv" # Ensure this points to your file
+
+REQUIRED_ARTIFACTS = [
+    "robust_scaler.pkl",
+    "target_label_encoder.pkl",
+    "feature_label_encoders.pkl",
+    "features_config.pkl"
+]
+
+DEFAULT_SELECTED_FEATURES = [
+    'mocodes', 'premis_cd', 'location', 'weapon_used_cd', 'vict_age',
+    'day', 'area', 'crm_risk', 'month', 'vict_descent', 'status',
+    'weekday', 'hour_bin', 'year', 'vict_sex_F', 'vict_sex_M', 'vict_sex_X'
+]
+
+CATEGORICAL_COLS_TO_ENCODE = [
+    'crm_risk', 'mocodes', 'vict_descent', 
+    'status', 'status_desc', 'location', 'hour_bin'
+]
+
+# ==========================================
+# HELPER FUNCTIONS
+# ==========================================
 
 def categorize_crime(crime):
-    """
-    Fonction auxiliaire pour regrouper les descriptions de crimes en catégories plus larges.
-    """
     if not isinstance(crime, str):
         return 'جرائم متنوعة / Miscellaneous Crimes'
-        
     crime = crime.upper()
-
-    # 1️⃣ السرقة والسطو / Theft and Burglary
-    if any(x in crime for x in [
-        'VEHICLE - STOLEN', 'BURGLARY FROM VEHICLE', 'BIKE - STOLEN',
-        'SHOPLIFTING-GRAND THEFT', 'BURGLARY', 'THEFT-GRAND', 'BUNCO, GRAND THEFT',
-        'THEFT PLAIN', 'THEFT FROM MOTOR VEHICLE', 'TILL TAP', 'BOAT - STOLEN',
-        'DISHONEST EMPLOYEE', 'PURSE SNATCHING', 'PETTY THEFT - AUTO REPAIR',
-        'SHOPLIFTING - PETTY THEFT', 'THEFT FROM PERSON', 'BUNCO, PETTY THEFT',
-        'THEFT, PERSON', 'THEFT, COIN MACHINE', 'GRAND THEFT / AUTO REPAIR',
-        'BIKE - ATTEMPTED STOLEN', 'VEHICLE - ATTEMPT STOLEN',
-        'VEHICLE, STOLEN - OTHER', 'PICKPOCKET', 'SHOPLIFTING - ATTEMPT',
-        'BUNCO, ATTEMPT', 'PICKPOCKET, ATTEMPT'
-    ]):
+    if any(x in crime for x in ['VEHICLE - STOLEN', 'BURGLARY', 'THEFT', 'BUNCO', 'PICKPOCKET', 'SHOPLIFTING']):
         return 'السرقة والسطو / Theft and Burglary'
-
-    # 2️⃣ العنف والاعتداء / Violence and Assault
-    elif any(x in crime for x in [
-        'ASSAULT', 'BATTERY', 'ROBBERY', 'KIDNAPPING', 'CRIMINAL HOMICIDE',
-        'MANSLAUGHTER', 'ATTEMPTED ROBBERY', 'INTIMATE PARTNER - SIMPLE ASSAULT',
-        'INTIMATE PARTNER - AGGRAVATED ASSAULT', 'OTHER ASSAULT',
-        'BATTERY POLICE', 'BATTERY ON A FIREFIGHTER',
-        'EXTORTION', 'FALSE IMPRISONMENT', 'STALKING',
-        'CHILD', 'CHILD ABUSE', 'CHILD NEGLECT', 'CHILD ANNOYING',
-        'CHILD STEALING', 'DISRUPT SCHOOL', 'DRUGS, TO A MINOR',
-        'CRM AGNST CHLD',
-        'CONTRIBUTING', 'TRAIN WRECKING', 'FAILURE TO DISPERSE', 'BLOCKING DOOR INDUCTION CENTER'
-    ]):
+    elif any(x in crime for x in ['ASSAULT', 'BATTERY', 'ROBBERY', 'HOMICIDE', 'KIDNAPPING', 'STALKING', 'ABUSE']):
         return 'العنف والاعتداء / Violence and Assault'
-
-    # 3️⃣ التخريب والتدمير / Vandalism and Destruction
-    elif any(x in crime for x in [
-        'VANDALISM', 'ARSON', 'SHOTS FIRED', 'THROWING OBJECT', 'DAMAGE', 'BOMB SCARE','DISTURBING THE PEACE'
-    ]):
+    elif any(x in crime for x in ['VANDALISM', 'ARSON', 'SHOTS FIRED', 'THROWING OBJECT', 'DAMAGE', 'BOMB']):
         return 'التخريب والتدمير / Vandalism and Destruction'
-
-    # 4️⃣ الاحتيال والتزوير / Fraud and Forgery
-    elif any(x in crime for x in [
-        'CREDIT CARDS', 'EMBEZZLEMENT', 'DEFRAUDING', 'THEFT OF SERVICES',
-        'DOCUMENT WORTHLESS', 'GRAND THEFT / INSURANCE FRAUD', 'THEFT OF IDENTITY'
-    ]):
+    elif any(x in crime for x in ['CREDIT CARDS', 'EMBEZZLEMENT', 'DEFRAUDING', 'FORGERY', 'IDENTITY']):
         return 'الاحتيال والتزوير / Fraud and Forgery'
-
-    # 5️⃣ المخالفات القانونية والجرائم المتعلقة بالأسلحة / Legal Offences & Weapons
-    elif any(x in crime for x in [
-        'COURT ORDER', 'VIOLATION OF COURT', 'CONTEMPT', 'FALSE POLICE REPORT',
-        'DOCUMENT FORGERY', 'COUNTERFEIT', 'BRIBERY', 'CONSPIRACY', 'THREATENING PHONE CALLS',
-        'VIOLATION OF RESTRAINING ORDER', 'VIOLATION OF TEMPORARY RESTRAINING ORDER',
-        'TRESPASSING', 'RESISTING ARREST', 'UNAUTHORIZED COMPUTER ACCESS',
-        'WEAPON', 'FIREARM', 'BRANDISH', 'DISCHARGE', 'REPLICA FIREARMS', 'FIREARMS RESTRAINING ORDER'
-    ]):
+    elif any(x in crime for x in ['COURT', 'CONTEMPT', 'VIOLATION', 'TRESPASSING', 'WEAPON', 'FIREARM']):
         return 'المخالفات القانونية والجرائم المتعلقة بالأسلحة / Legal Offences & Weapons'
-
-    # 6️⃣ الجرائم الجنسية والاتجار / Sexual Crimes & Exploitation
-    elif any(x in crime for x in [
-        'RAPE', 'SEX', 'INDECENT', 'LEWD', 'SODOMY', 'ORAL COPULATION',
-        'SEXUAL PENETRATION', 'CHILD PORNOGRAPHY', 'HUMAN TRAFFICKING',
-        'BATTERY WITH SEXUAL CONTACT', 'BEASTIALITY', 'INCEST', 'PEEPING TOM', 'BIGAMY',
-        'TRAFFICKING', 'PIMPING', 'PANDERING'
-    ]):
+    elif any(x in crime for x in ['RAPE', 'SEX', 'LEWD', 'PIMPING', 'TRAFFICKING', 'INCEST']):
         return 'الجرائم الجنسية والاتجار / Sexual Crimes & Exploitation'
-
-    # 8️⃣ جرائم متنوعة / Miscellaneous Crimes
-    elif any(x in crime for x in [
-        'OTHER MISCELLANEOUS CRIME', 'ANIMAL', 'CRUELTY', 'ILLEGAL DUMPING',
-        'LYNCHING', 'INCITING', 'THREAT', 'PROWLER', 'INCITING A RIOT','DRIVING', 'RECKLESS', 'FAILURE TO YIELD', 'DRUNK'
-    ]):
-        return 'جرائم متنوعة / Miscellaneous Crimes'
-
-    # Default
     return 'جرائم متنوعة / Miscellaneous Crimes'
 
-
-def preprocess_data(df_raw, save_artifacts=True, artifacts_path="processors"):
-    """
-    Exécute le pipeline complet de nettoyage et de feature engineering.
-    
-    Args:
-        df_raw (pd.DataFrame): Le dataframe brut chargé depuis le CSV.
-        save_artifacts (bool): Si True, sauvegarde les données et encodeurs sur le disque.
-        artifacts_path (str): Chemin du dossier où sauvegarder les artefacts.
-        
-    Returns:
-        X (pd.DataFrame): Features processées.
-        y (pd.Series): Target encodée.
-        encoders (dict): Dictionnaire contenant les LabelEncoders entraînées.
-    """
-    # Copie pour éviter les warnings de modification
-    df = df_raw.copy()
-
-    # --- 1. Nettoyage des noms de colonnes ---
+def clean_column_names(df):
     df.columns = (
         df.columns
         .str.lower()
@@ -111,141 +61,232 @@ def preprocess_data(df_raw, save_artifacts=True, artifacts_path="processors"):
         .str.replace('/', '_')
         .str.replace(r'[^a-z0-9_]', '', regex=True)
     )
+    return df
 
-    # --- 2. Suppression de colonnes et renommage initial ---
+def load_and_clean_initial(filepath):
+    print(f"Loading data from {filepath}...")
+    df = pd.read_csv(filepath)
+    
+    # --- FIX: Remove the index column saved by to_csv ---
+    if "Unnamed: 0" in df.columns:
+        df.drop("Unnamed: 0", axis=1, inplace=True)
+        
+    df = clean_column_names(df)
+    
     if "dr_no" in df.columns:
         df.drop("dr_no", axis=1, inplace=True)
     
-    df = df.rename(columns={"part_1_2": "crm_categories"})
-
-    # --- 3. Suppression des doublons ---
+    df = df.rename(columns={"part_1_2": "crm_risk"})
+    
+    initial_len = len(df)
     df = df.drop_duplicates()
+    print(f"Dropped {initial_len - len(df)} duplicates.")
+    return df
 
-    # --- 4. Conversion des dates et Feature Engineering Temporel ---
+def feature_engineering_temporal(df):
+    print("Engineering temporal features...")
     df['date_occ'] = pd.to_datetime(df['date_occ'], format="%m/%d/%Y %I:%M:%S %p", errors='coerce')
     
-    df['Year']      = df['date_occ'].dt.year
-    df['Month']     = df['date_occ'].dt.month
-    df['Day']       = df['date_occ'].dt.day
-    df['Hour']      = df['time_occ'] // 100
-    df['Minute']    = df['time_occ'] % 100 
-    df['Weekday']   = df['date_occ'].dt.weekday
-    df['is_weekend']= df['Weekday'].isin([5, 6])
-
-    # --- 5. Gestion des valeurs manquantes (Imputation) ---
+    # Lowercase column names to match the clean_column_names standard
+    df['year'] = df['date_occ'].dt.year
+    df['month'] = df['date_occ'].dt.month
+    df['day'] = df['date_occ'].dt.day
+    df['weekday'] = df['date_occ'].dt.weekday
     
-    # Vict Descent
-    df['vict_descent'] = df['vict_descent'].fillna('UNKNOWN')
-    df['vict_descent'] = df['vict_descent'].replace({'-': 'UNKNOWN'})
+    df['hour'] = df['time_occ'] // 100
+    df['minute'] = df['time_occ'] % 100 
+    
+    bins = [0, 6, 12, 18, 24]
+    labels = ['Night', 'Morning', 'Afternoon', 'Evening']
+    df['hour_bin'] = pd.cut(df['hour'], bins=bins, labels=labels, right=False).astype(str)
+    
+    df = df.drop(columns=['time_occ', 'date_rptd', 'date_occ'], errors='ignore')
+    return df
 
-    # Vict Sex
-    df['vict_sex'] = df['vict_sex'].fillna('X')
-    df['vict_sex'] = df['vict_sex'].replace({'H': 'X', '-': 'X'})
-
-    # Modes (Mocodes, Premis, Status)
+def handle_missing_values_and_text(df):
+    print("Handling missing values...")
+    
+    df['vict_descent'] = df['vict_descent'].fillna('UNKNOWN').replace({'-': 'UNKNOWN'})
+    df['vict_sex'] = df['vict_sex'].fillna('X').replace({'H': 'X', '-': 'X'})
+    
+    # Only fill modes if columns exist
     for col in ['mocodes', 'premis_cd', 'premis_desc', 'status']:
-        mode_val = df[col].mode()
-        if not mode_val.empty:
-            df[col] = df[col].fillna(mode_val[0])
+        if col in df.columns:
+            mode_val = df[col].mode()
+            if not mode_val.empty:
+                df[col] = df[col].fillna(mode_val[0])
 
-    # Armes
     df['weapon_desc'] = df['weapon_desc'].fillna('NO WEAPON')
     df['weapon_used_cd'] = df['weapon_used_cd'].fillna(0.0)
+    
+    df.loc[(df['vict_age'] < 0) | (df['vict_age'] > 100), 'vict_age'] = np.nan
+    mean_age = df['vict_age'].mean()
+    df['vict_age'] = df['vict_age'].fillna(mean_age)
 
-    # --- 6. Nettoyage de texte (Premis Desc) ---
     if 'premis_desc' in df.columns:
-        df['premis_desc'] = df['premis_desc'].str.title()
-        df['premis_desc'] = df['premis_desc'].str.replace(r'\(.*?\)', '', regex=True)
-        df['premis_desc'] = df['premis_desc'].apply(lambda x: re.sub(r'(?<=[a-z])(?=[A-Z])', ' ', str(x)))
-        df['premis_desc'] = df['premis_desc'].str.strip()
-        df['premis_desc'] = df['premis_desc'].str.replace(r'\s+', ' ', regex=True)
-
-    # --- 7. Suppression de colonnes inutiles ou trop vides ---
+        df['premis_desc'] = df['premis_desc'].str.title().str.replace(r'\(.*?\)', '', regex=True).str.strip()
+    
     cols_to_drop = ['crm_cd_1', 'crm_cd_2', 'crm_cd_3', 'crm_cd_4', 'cross_street']
     df.drop(columns=[c for c in cols_to_drop if c in df.columns], inplace=True)
+    
+    return df
 
-    # --- 8. Encodage ---
-
-    # One-Hot Encoding pour le sexe
-    df = pd.get_dummies(df, columns=['vict_sex'], prefix='vict_sex', dtype=int)
-
-    # Label Encoding pour la descendance
-    le_descent = LabelEncoder()
-    df['Vict_Descent_LE'] = le_descent.fit_transform(df['vict_descent'].astype(str))
-
-    # --- 9. Création de la Target (Crime Class) ---
+def process_target(df, encoder=None):
+    print("Processing target variable...")
     df['Crime_Class'] = df['crm_cd_desc'].apply(categorize_crime)
+    
+    if encoder:
+        print("Using loaded Target Encoder.")
+        df['Crime_Class_Enc'] = encoder.transform(df['Crime_Class'])
+    else:
+        print("Fitting new Target Encoder.")
+        encoder = LabelEncoder()
+        df['Crime_Class_Enc'] = encoder.fit_transform(df['Crime_Class'])
+    
+    df.drop(columns=['Crime_Class', 'crm_cd_desc', 'area_name', 'premis_desc', 'weapon_desc'], inplace=True, errors='ignore')
+    return df, encoder
 
-    # Label Encoding de la Target
-    le_target = LabelEncoder()
-    df['Crime_Class_Enc'] = le_target.fit_transform(df['Crime_Class'])
+def encode_features(df, encoders=None):
+    print("Encoding features...")
+    
+    # One-Hot Encoding for Sex
+    df = pd.get_dummies(df, columns=['vict_sex'], prefix='vict_sex', dtype=int)
+    
+    if encoders:
+        print(f"Using {len(encoders)} loaded Feature Encoders.")
+        for col, le in encoders.items():
+            if col in df.columns:
+                # Handle unseen labels by assigning a default or skipping
+                # Simple approach: convert to string to match training type
+                try:
+                    df[col] = le.transform(df[col].astype(str))
+                except ValueError:
+                    # For production: You might map unseen to 'Unknown' or similar
+                    print(f"Warning: Unseen labels in {col}, potential error.")
+    else:
+        print("Fitting new Feature Encoders.")
+        encoders = {}
+        for col in CATEGORICAL_COLS_TO_ENCODE:
+            if col in df.columns:
+                le = LabelEncoder()
+                df[col] = le.fit_transform(df[col].astype(str))
+                encoders[col] = le
+            
+    return df, encoders
 
-    # --- 10. Sélection finale des colonnes ---
-    cols_to_keep = [
-        'Year', 'Month', 'Day', 'Hour', 'Minute', 
-        'area', 'rpt_dist_no', 'crm_categories',
-        'crm_cd', 'vict_age', 'Vict_Descent_LE',
-        'premis_cd', 'weapon_used_cd', 'lat', 'lon'
-    ]
-    # Ajouter dynamiquement les colonnes issues du One-Hot Encoding
-    vict_sex_cols = [col for col in df.columns if col.startswith('vict_sex_')]
-    cols_to_keep += vict_sex_cols
+def check_artifacts_exist():
+    for f in REQUIRED_ARTIFACTS:
+        if not os.path.exists(os.path.join(ARTIFACTS_PATH, f)):
+            return False
+    return True
 
-    # Séparation X et y
-    X = df[cols_to_keep].copy()
+# ==========================================
+# MAIN PIPELINE FUNCTION
+# ==========================================
+
+def run_preprocessing_pipeline():
+    if not os.path.exists(DATA_PATH):
+        raise FileNotFoundError(f"Data file not found at {DATA_PATH}")
+    
+    # 1. Load & Clean
+    df = load_and_clean_initial(DATA_PATH)
+    
+    # 2. Engineer & Impute
+    df = feature_engineering_temporal(df)
+    df = handle_missing_values_and_text(df)
+    
+    # 3. Determine Mode (Load vs Fit)
+    artifacts_exist = check_artifacts_exist()
+    target_encoder = None
+    feature_encoders = None
+    scaler = None
+    selected_features = [f.lower() for f in DEFAULT_SELECTED_FEATURES] # Ensure lowercase matches clean_column_names
+    
+    if artifacts_exist:
+        print("\n[INFO] Artifacts found. Loading processors...")
+        with open(os.path.join(ARTIFACTS_PATH, "target_label_encoder.pkl"), "rb") as f:
+            target_encoder = pickle.load(f)
+        with open(os.path.join(ARTIFACTS_PATH, "feature_label_encoders.pkl"), "rb") as f:
+            feature_encoders = pickle.load(f)
+        with open(os.path.join(ARTIFACTS_PATH, "robust_scaler.pkl"), "rb") as f:
+            scaler = pickle.load(f)
+        with open(os.path.join(ARTIFACTS_PATH, "features_config.pkl"), "rb") as f:
+            config = pickle.load(f)
+            selected_features = [f.lower() for f in config.get("final_feature_order", DEFAULT_SELECTED_FEATURES)]
+    else:
+        print("\n[INFO] Artifacts not found. Starting Training Mode (Fitting processors)...")
+        os.makedirs(ARTIFACTS_PATH, exist_ok=True)
+
+    # 4. Process Target & Encode
+    df, target_encoder = process_target(df, encoder=target_encoder)
+    df, feature_encoders = encode_features(df, encoders=feature_encoders)
+    
+    # 5. Select Features
+    print(f"Selecting {len(selected_features)} features...")
+    # Ensure all selected features exist (handle potential missing One-Hot columns)
+    for col in selected_features:
+        if col not in df.columns:
+            df[col] = 0
+            
+    X = df[selected_features]
     y = df['Crime_Class_Enc']
-
-    # Dictionnaire des encodeurs
-    encoders = {
-        'le_descent': le_descent,
-        'le_target': le_target
+    
+    # 6. Split
+    print("Splitting data...")
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, stratify=y, random_state=42
+    )
+    
+    # 7. Scale
+    if artifacts_exist:
+        print("Applying loaded Scaler...")
+        X_train_scaled = scaler.transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
+    else:
+        print("Fitting and Applying Scaler...")
+        scaler = RobustScaler()
+        X_train_scaled = scaler.fit_transform(X_train)
+        X_test_scaled = scaler.transform(X_test)
+    
+    # 8. Save
+    print("\nSaving processed data...")
+    data_package = {
+        "X_train_scaled": X_train_scaled,
+        "X_test_scaled": X_test_scaled,
+        "y_train": y_train.values,
+        "y_test": y_test.values
     }
+    with open(os.path.join(ARTIFACTS_PATH, "preprocessed_data.pkl"), "wb") as f:
+        pickle.dump(data_package, f)
 
-    # --- 11. Sauvegarde optionnelle (Code demandé) ---
-    if save_artifacts:
-        print("\n" + "=" * 80)
-        print("SAUVEGARDE POUR L'ÉTAPE DE MODELING")
-        print("=" * 80)
-
-        os.makedirs(artifacts_path, exist_ok=True)
-
-        # Identifier les colonnes numériques pour le scaling futur
-        numeric_cols = X.select_dtypes(include=[np.number]).columns.tolist()
-
-        # A. Sauvegarder X et y
-        data_package = {
-            "X": X,
-            "y": y,
-            "numeric_cols": numeric_cols,
-            "categorical_cols": [c for c in X.columns if c not in numeric_cols]
-        }
-        with open(os.path.join(artifacts_path, "data_for_modeling.pkl"), "wb") as f:
-            pickle.dump(data_package, f)
-        print("✓ Données X et y sauvegardées (brutes, prêtes pour optimisation)")
-
-        # B. Sauvegarder le LabelEncoder de la cible
-        with open(os.path.join(artifacts_path, "label_encoder_target.pkl"), "wb") as f:
-            pickle.dump(le_target, f)
-        print("✓ LabelEncoder de la cible sauvegardé")
-
-        # C. Sauvegarder le mapping cible (lisible)
-        target_mapping = {
-            "classes": list(le_target.classes_),
-            "mapping": {cls: int(le_target.transform([cls])[0]) for cls in le_target.classes_}
-        }
-        with open(os.path.join(artifacts_path, "target_mapping.pkl"), "wb") as f:
+    if not artifacts_exist:
+        print("Saving new processors...")
+        with open(os.path.join(ARTIFACTS_PATH, "target_label_encoder.pkl"), "wb") as f:
+            pickle.dump(target_encoder, f)
+        
+        # Save encoders only for columns present in selected features
+        relevant_encoders = {col: enc for col, enc in feature_encoders.items() if col in selected_features}
+        with open(os.path.join(ARTIFACTS_PATH, "feature_label_encoders.pkl"), "wb") as f:
+            pickle.dump(relevant_encoders, f)
+            
+        with open(os.path.join(ARTIFACTS_PATH, "robust_scaler.pkl"), "wb") as f:
+            pickle.dump(scaler, f)
+            
+        target_mapping = {"code_to_class": {code: cls for code, cls in enumerate(target_encoder.classes_)}}
+        with open(os.path.join(ARTIFACTS_PATH, "target_mapping.pkl"), "wb") as f:
             pickle.dump(target_mapping, f)
-        print("✓ Mapping cible (Dictionnaire) sauvegardé")
-
-        # D. Sauvegarder la config des features
-        feature_config = {
-            "final_features": list(X.columns),
-            "target_name": "Crime_Class_Enc"
-        }
-        with open(os.path.join(artifacts_path, "features_config.pkl"), "wb") as f:
+            
+        feature_config = {"final_feature_order": selected_features}
+        with open(os.path.join(ARTIFACTS_PATH, "features_config.pkl"), "wb") as f:
             pickle.dump(feature_config, f)
-        print("✓ Configuration des colonnes sauvegardée")
+        
+        print(f"✓ New processors saved to '{ARTIFACTS_PATH}/'")
+    else:
+        print(f"✓ Processors loaded from '{ARTIFACTS_PATH}/' were used.")
 
-        print("\n🚀 PRÊT POUR LE MODELING ! Vous pouvez passer au notebook suivant.")
+    print(f"✓ Preprocessing complete.")
+    print(f"  - Train shape: {X_train_scaled.shape}")
+    print(f"  - Test shape: {X_test_scaled.shape}")
 
-    return X, y, encoders
+if __name__ == "__main__":
+    run_preprocessing_pipeline()
