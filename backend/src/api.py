@@ -6,7 +6,8 @@ import numpy as np
 from dotenv import load_dotenv
 import mlflow
 import dagshub
-from fastapi import FastAPI, HTTPException, Request
+import uvicorn
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field, ConfigDict
 from contextlib import asynccontextmanager
 from typing import Optional, Dict, Any
@@ -38,6 +39,7 @@ PROCESSORS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "processors
 ml_components = {
     "model": None,
     "target_encoder": None,
+    "target_mapping": None,  # Fallback for older artifacts
     "feature_encoders": None,
     "scaler": None,
     "config": None
@@ -157,8 +159,18 @@ def load_best_model():
 def load_processors():
     """Loads local preprocessing artifacts (Scalers, Encoders)."""
     try:
-        with open(os.path.join(PROCESSORS_DIR, "target_label_encoder.pkl"), "rb") as f:
-            ml_components["target_encoder"] = pickle.load(f)
+        # Try to load target_label_encoder first (preferred)
+        target_encoder_path = os.path.join(PROCESSORS_DIR, "target_label_encoder.pkl")
+        if os.path.exists(target_encoder_path):
+            with open(target_encoder_path, "rb") as f:
+                ml_components["target_encoder"] = pickle.load(f)
+        
+        # Also try to load target_mapping as fallback (for older artifacts)
+        target_mapping_path = os.path.join(PROCESSORS_DIR, "target_mapping.pkl")
+        if os.path.exists(target_mapping_path):
+            with open(target_mapping_path, "rb") as f:
+                ml_components["target_mapping"] = pickle.load(f)
+        
         with open(os.path.join(PROCESSORS_DIR, "feature_label_encoders.pkl"), "rb") as f:
             ml_components["feature_encoders"] = pickle.load(f)
         with open(os.path.join(PROCESSORS_DIR, "robust_scaler.pkl"), "rb") as f:
@@ -190,36 +202,24 @@ def prepare_input_for_model(input_dict: Dict[str, Any]):
     # 4. Missing Values (Imported)
     df = pp.handle_missing_values_and_text(df)
     
-    # 5. Encoding & Scaling (Manual application using loaded artifacts)
-    # Manual One-Hot for Sex to ensure consistent columns
-    sex = str(input_dict.get('Vict Sex', 'X')).upper()
-    df['vict_sex_f'] = 1 if sex == 'F' else 0
-    df['vict_sex_m'] = 1 if sex == 'M' else 0
-    df['vict_sex_x'] = 1 if sex not in ['F', 'M'] else 0
-    
-    # Label Encoding
+    # 5. Encoding & Scaling (Use preprocessing.encode_features if available)
+    # This handles both LabelEncoding and One-Hot encoding (for vict_sex)
     encoders = ml_components["feature_encoders"]
-    for col, le in encoders.items():
-        col_lower = col.lower()
-        if col_lower in df.columns:
-            val = str(df[col_lower].iloc[0])
-            if val in le.classes_:
-                df[col_lower] = le.transform([val])[0]
-            else:
-                df[col_lower] = 0 # Handle unknown
-                
-    # Feature Selection / Ordering
-    final_cols = [f.lower() for f in ml_components["config"]['final_feature_order']]
+    df, _ = pp.encode_features(df, encoders=encoders)
     
-    # Ensure columns exist
-    for col in final_cols:
+    # 6. Feature Selection / Ordering
+    required_features = ml_components["config"]['final_feature_order']
+    
+    # Ensure columns exist (handle missing One-Hot columns)
+    for col in required_features:
         if col not in df.columns:
             df[col] = 0
-            
-    X = df[final_cols]
     
-    # Scaling
-    X_scaled = ml_components["scaler"].transform(X)
+    # Reindex to match exact feature order from training
+    df_final = df.reindex(columns=required_features, fill_value=0)
+    
+    # 7. Scaling
+    X_scaled = ml_components["scaler"].transform(df_final)
     
     return X_scaled
 
@@ -279,8 +279,13 @@ def predict_crime(payload: CrimeInput):
         model = ml_components["model"]
         pred_idx = model.predict(X_input)[0]
         
-        # Decode Label
-        pred_label = ml_components["target_encoder"].inverse_transform([pred_idx])[0]
+        # Decode Label (prefer target_encoder, fallback to target_mapping)
+        if ml_components["target_encoder"] is not None:
+            pred_label = ml_components["target_encoder"].inverse_transform([pred_idx])[0]
+        elif ml_components["target_mapping"] is not None:
+            pred_label = ml_components["target_mapping"].get("code_to_class", {}).get(int(pred_idx), str(pred_idx))
+        else:
+            pred_label = str(pred_idx)
         
         # Confidence
         confidence = 0.0
@@ -303,7 +308,4 @@ def predict_crime(payload: CrimeInput):
 # 6. ENTRY POINT
 # ==========================================
 if __name__ == "__main__":
-    import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=5000)
-    
-#http://127.0.0.1:5000/docs#/
