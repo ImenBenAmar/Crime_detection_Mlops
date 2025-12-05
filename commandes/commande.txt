@@ -1,2 +1,10 @@
 python -m pytest c:/Users/yomna/Downloads/Projet_MLOPS/testing/preprocessing_test.py 
 .\env\Scripts\Activate
+
+git add data.dvc .gitignore
+git commit -m "Track /data with DVC"
+git push
+dvc remote add origin https://github.com/YomnaJL/MLOPS.git
+dvc remote modify origin --local auth basic
+dvc remote modify origin --local password <token>
+dvc push -r origin
