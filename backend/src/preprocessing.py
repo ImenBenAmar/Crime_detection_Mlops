@@ -300,29 +300,6 @@ def run_preprocessing_pipeline():
     print(f"  - Test shape: {X_test_scaled.shape}")
 
 
-def load_artifacts(self):
-        """Loads the saved pickle artifacts."""
-        try:
-            with open(os.path.join(self.artifacts_path, "robust_scaler.pkl"), "rb") as f:
-                self.scaler = pickle.load(f)
-            with open(os.path.join(self.artifacts_path, "feature_label_encoders.pkl"), "rb") as f:
-                self.feature_encoders = pickle.load(f)
-            with open(os.path.join(self.artifacts_path, "features_config.pkl"), "rb") as f:
-                self.config = pickle.load(f)
-            
-            # Load Target mapping to decode predictions back to text
-            mapping_path = os.path.join(self.artifacts_path, "target_mapping.pkl")
-            if os.path.exists(mapping_path):
-                with open(mapping_path, "rb") as f:
-                    self.target_mapping = pickle.load(f)
-            else:
-                self.target_mapping = None
-                
-            print("✅ Preprocessing artifacts loaded successfully.")
-        except FileNotFoundError as e:
-            raise FileNotFoundError(f"❌ Could not load artifacts from {self.artifacts_path}. Run training first. Error: {e}")
-
-
 
 
 if __name__ == "__main__":
