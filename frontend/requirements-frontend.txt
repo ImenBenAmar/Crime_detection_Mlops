@@ -1,0 +1,12 @@
+# ==================================
+# FRONTEND DEPENDENCIES
+# ==================================
+
+# --- Web Application Framework ---
+streamlit
+
+# --- HTTP Communication ---
+requests  # Pour appeler l'API du backend
+
+# --- Data Handling (pour le téléversement de CSV) ---
+pandas

@@ -36,3 +36,7 @@ http://127.0.0.1:7000/
 
 pip install -r requirements.txt
 .\env\Scripts\python.exe backend\src\api.py
+
+streamlit run app.py 
+
+docker-compose up --build

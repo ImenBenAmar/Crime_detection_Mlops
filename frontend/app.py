@@ -4,6 +4,7 @@ import streamlit as st
 import pandas as pd
 import requests
 import json
+import os
 from datetime import datetime, time
 
 # ==========================================
@@ -23,7 +24,12 @@ SEX_MAP = {"Female": "F", "Male": "M", "Unknown": "X"}
 DESCENT_MAP = {"White": "W", "Black": "B", "Hispanic": "H", "Asian": "A", "Other": "O"}
 STATUS_MAP = {"Investigation Continued": "IC", "Adult Arrest": "AA", "Adult Other": "AO", "Juvenile Arrest": "JA"}
 INV_STATUS_MAP = {v: k for k, v in STATUS_MAP.items()}
-API_URL = "http://127.0.0.1:7000/predict"
+
+# --- MODIFICATION CLÉ POUR DOCKER ---
+# Récupérer l'URL de base de l'API depuis la variable d'environnement (définie dans docker-compose.yml)
+# Si la variable n'existe pas (lorsqu'on exécute en local), utilise une valeur par défaut.
+API_BASE_URL = os.getenv("API_URL", "http://127.0.0.1:5000")
+API_PREDICT_URL = f"{API_BASE_URL}/predict"
 
 # ==========================================
 # Fonction de Prédiction avec Mise en Cache
@@ -39,7 +45,9 @@ def get_predictions_from_api(df_cleaned):
     
     for i, payload in enumerate(list_of_dicts):
         try:
-            response = requests.post(API_URL, data=json.dumps(payload), headers={"Content-Type": "application/json"})
+            # --- CORRECTION ICI ---
+            # Utiliser la variable API_PREDICT_URL définie ci-dessus
+            response = requests.post(API_PREDICT_URL, data=json.dumps(payload), headers={"Content-Type": "application/json"})
             if response.status_code == 200:
                 result = response.json()
                 predictions.append(result['prediction'])
@@ -77,16 +85,13 @@ if input_method == "Formulaire Manuel (une seule prédiction)":
     with st.sidebar.form(key='crime_form_full'):
         st.subheader("🗓️ Date et Heure")
         col1, col2 = st.columns(2)
-        with col1:
-            date_occ_val = st.date_input("Date de l'incident", value=datetime(2023, 1, 1))
-        with col2:
-            time_occ_val_input = st.time_input("Heure de l'incident", value=time(13, 30))
-        
+        with col1: date_occ_val = st.date_input("Date de l'incident", value=datetime(2023, 1, 1))
+        with col2: time_occ_val_input = st.time_input("Heure de l'incident", value=time(13, 30))
         time_occ_val = int(time_occ_val_input.strftime("%H%M"))
         date_occ_str = date_occ_val.strftime("%m/%d/%Y") + " " + time_occ_val_input.strftime("%I:%M:%S %p")
 
         st.subheader("📍 Lieu et Zone")
-        area_val = st.number_input("Zone (AREA)", min_value=1, max_value=21, value=1, step=1, help="Numéro de la zone de police (1-21)")
+        area_val = st.number_input("Zone (AREA)", min_value=1, max_value=21, value=1, step=1)
         rpt_dist_no_val = st.number_input("District de rapport (Rpt Dist No)", value=784, step=1)
         location_val = st.text_input("Adresse (LOCATION)", value="800 W OLYMPIC BLVD")
         lat_val = st.number_input("Latitude (LAT)", value=34.0459, format="%.4f")
@@ -98,15 +103,15 @@ if input_method == "Formulaire Manuel (une seule prédiction)":
         vict_descent_display = st.selectbox("Origine de la victime (Vict Descent)", options=list(DESCENT_MAP.keys()), index=0)
 
         st.subheader("📜 Détails sur le Crime")
-        part_1_2_val = st.number_input("Type de rapport (Part 1-2)", value=1, step=1, help="Généralement 1 ou 2")
-        crm_cd_val = st.number_input("Code du crime (Crm Cd)", value=510, step=1, help="Code numérique spécifique au crime (ex: 510 pour vol de véhicule)")
-        mocodes_val = st.text_input("Modus Operandi (Mocodes)", value="0344 1822", help="Codes décrivant la méthode du crime, séparés par des espaces.")
+        part_1_2_val = st.number_input("Type de rapport (Part 1-2)", value=1, step=1)
+        crm_cd_val = st.number_input("Code du crime (Crm Cd)", value=510, step=1)
+        mocodes_val = st.text_input("Modus Operandi (Mocodes)", value="0344 1822")
         status_display = st.selectbox("Statut de l'affaire (Status)", options=list(STATUS_MAP.keys()), index=0)
 
         st.subheader("🏢 Lieux et Armes")
         premis_cd_val = st.number_input("Code des lieux (Premis Cd)", value=101.0, format="%.1f")
         premis_desc_val = st.text_input("Description des lieux (Premis Desc)", value="STREET")
-        weapon_used_cd_val = st.number_input("Code de l'arme (Weapon Used Cd)", value=400.0, format="%.1f", help="0 si aucune arme")
+        weapon_used_cd_val = st.number_input("Code de l'arme (Weapon Used Cd)", value=400.0, format="%.1f")
         weapon_desc_val = st.text_input("Description de l'arme (Weapon Desc)", value="STRONG-ARM (HANDS, FIST, FEET OR BODILY FORCE)")
         
         submit_button = st.form_submit_button(label='▶️ Obtenir la Prédiction')
@@ -121,23 +126,31 @@ if input_method == "Formulaire Manuel (une seule prédiction)":
             "Weapon Desc": weapon_desc_val, "Status": STATUS_MAP[status_display],
             "LOCATION": location_val, "LAT": lat_val, "LON": lon_val
         }
-        df_single = pd.DataFrame([payload])
-        predictions, confidences = get_predictions_from_api(df_single)
+        
+        with st.spinner("Prédiction en cours..."):
+            try:
+                # --- CORRECTION ICI ---
+                response = requests.post(API_PREDICT_URL, data=json.dumps(payload), headers={"Content-Type": "application/json"})
+                if response.status_code == 200:
+                    result = response.json()
+                    prediction_code = result['prediction']
+                    confidence = result.get('confidence', 0)
+                    prediction_display = INV_STATUS_MAP.get(prediction_code, prediction_code)
 
-        if predictions:
-            prediction_code = predictions[0]
-            confidence = confidences[0] if confidences and confidences[0] is not None else 0
-            prediction_display = INV_STATUS_MAP.get(prediction_code, prediction_code)
-            
-            st.header("Résultat de la Prédiction")
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric(label="Catégorie de Crime Prédite", value=prediction_display)
-                st.metric(label="Niveau de Confiance", value=f"{confidence:.2%}")
-                if confidence < 0.6: st.warning("Confiance faible. Prédiction à considérer avec prudence.", icon="⚠️")
-            with col2:
-                map_data = pd.DataFrame({'lat': [lat_val], 'lon': [lon_val]})
-                st.map(map_data, zoom=13)
+                    st.header("Résultat de la Prédiction")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.metric(label="Catégorie de Crime Prédite", value=prediction_display)
+                        st.metric(label="Niveau de Confiance", value=f"{confidence:.2%}")
+                        if confidence < 0.6: st.warning("Confiance faible.", icon="⚠️")
+                    with col2:
+                        map_data = pd.DataFrame({'lat': [lat_val], 'lon': [lon_val]})
+                        st.map(map_data, zoom=13)
+                else:
+                    st.error(f"Erreur de l'API (Code: {response.status_code})")
+                    st.json(response.json())
+            except requests.exceptions.ConnectionError:
+                st.error("🔌 Erreur de Connexion", icon="🚨")
 
 # =============================================================================
 # --- CAS 2: TÉLÉVERSEMENT CSV

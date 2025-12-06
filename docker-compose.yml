@@ -1,0 +1,39 @@
+version: '3.8'
+
+services:
+  # Service 1: Le Backend (notre API)
+  backend:
+    build:
+      context: ./backend/src  # Indique où trouver le Dockerfile
+    container_name: crime-api-backend
+    ports:
+      # Mappe le port 5000 du conteneur au port 5000 de votre machine
+      - "5000:5000"
+    volumes:
+      # (Optionnel) Monter le code local dans le conteneur pour le développement
+      # Si vous modifiez le code, vous n'aurez pas à reconstruire l'image.
+      # En production, vous devriez supprimer cette ligne.
+      - ./backend:/app
+    environment:
+      # Transférer les secrets depuis votre fichier .env local
+      - DAGSHUB_USERNAME=${DAGSHUB_USERNAME}
+      - DAGSHUB_TOKEN=${DAGSHUB_TOKEN}
+      - DAGSHUB_REPO_NAME=${DAGSHUB_REPO_NAME}
+
+  # Service 2: Le Frontend (notre interface Streamlit)
+  frontend:
+    build:
+      context: ./frontend
+    container_name: crime-app-frontend
+    ports:
+      # Mappe le port 8501 du conteneur au port 8501 de votre machine
+      - "8501:8501"
+    volumes:
+      # (Optionnel) Montage pour le développement, à supprimer en production
+      - ./frontend:/app
+    depends_on:
+      # Indique à Docker Compose de démarrer le backend AVANT le frontend
+      - backend
+    environment:
+      # Transférer l'URL de l'API au conteneur du frontend
+      - API_URL=http://backend:5000

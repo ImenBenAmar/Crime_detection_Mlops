@@ -1,0 +1,28 @@
+# ==================================
+# BACKEND & ML CORE DEPENDENCIES
+# ==================================
+
+# --- Data Science & Machine Learning ---
+pandas
+numpy
+scikit-learn
+xgboost
+lightgbm
+catboost
+
+# --- ML Operations (MLOps) ---
+mlflow>=2,<3
+dagshub
+
+# --- API & Web Server ---
+fastapi
+uvicorn[standard]  # [standard] inclut des dépendances utiles comme websockets
+pydantic
+
+# --- Utilities ---
+python-dotenv  # Pour gérer les variables d'environnement (.env)
+jinja2         # Souvent une dépendance indirecte de frameworks web ou de reporting
+pytest         # Pour les tests unitaires et d'intégration
+
+# --- Standard Library (pas besoin de l'ajouter, mais pour info) ---
+datetime
