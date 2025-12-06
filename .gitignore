@@ -2,8 +2,4 @@ env
 data
 .env 
 ./processors
-pyvenv.cfg
-venv
-__pycache__
-*.pyc
-*.pyo   
+venv 
