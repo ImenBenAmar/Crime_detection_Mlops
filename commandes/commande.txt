@@ -8,3 +8,31 @@ dvc remote add origin https://github.com/YomnaJL/MLOPS.git
 dvc remote modify origin --local auth basic
 dvc remote modify origin --local password <token>
 dvc push -r origin
+
+.\env\Scripts\Activate.ps1
+http://127.0.0.1:7000/
+{
+  "DATE OCC": "01/15/2023 02:30:00 PM",
+  "TIME OCC": 1430,
+  "AREA": 1,
+  "Rpt Dist No": 101,
+  "Part 1-2": 2,
+  "Crm Cd": 624,
+  "Mocodes": "0416 0400",
+  "Vict Age": 30,
+  "Vict Sex": "F",
+  "Vict Descent": "W",
+  "Premis Cd": 101,
+  "Premis Desc": "STREET",
+  "Weapon Used Cd": 400,
+  "Weapon Desc": "STRONG-ARM (HANDS, FIST, FEET OR BODILY FORCE)",
+  "Status": "IC",
+  "LOCATION": "1100 S FIGUEROA ST",
+  "LAT": 34.0407,
+  "LON": -118.2679
+}
+
+
+
+pip install -r requirements.txt
+.\env\Scripts\python.exe backend\src\api.py

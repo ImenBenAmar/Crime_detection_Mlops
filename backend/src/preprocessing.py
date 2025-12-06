@@ -10,7 +10,7 @@ from sklearn.preprocessing import LabelEncoder, RobustScaler
 # CONFIGURATION
 # ==========================================
 ARTIFACTS_PATH = "processors"
-DATA_PATH = "../../data/crime_v1.csv" # Ensure this points to your file
+DATA_PATH = "data/crime_v1.csv" # Ensure this points to your file
 
 REQUIRED_ARTIFACTS = [
     "robust_scaler.pkl",
@@ -35,22 +35,94 @@ CATEGORICAL_COLS_TO_ENCODE = [
 # ==========================================
 
 def categorize_crime(crime):
+    """
+    Categorizes a crime description into one of several predefined classes.
+    The function is case-insensitive and handles non-string inputs.
+    """
+    # 1. Vérification de robustesse : Gérer les entrées qui ne sont pas du texte (ex: NaN)
     if not isinstance(crime, str):
         return 'جرائم متنوعة / Miscellaneous Crimes'
+    
+    # 2. Normalisation : Mettre en majuscules pour une comparaison insensible à la casse
     crime = crime.upper()
-    # Check fraud first (more specific conditions before general ones)
-    if any(x in crime for x in ['CREDIT CARDS', 'EMBEZZLEMENT', 'DEFRAUDING', 'FORGERY', 'IDENTITY']):
+
+    # 3. Logique de classification, du plus spécifique au plus général
+
+    # Catégorie : الاحتيال والتزوير / Fraud and Forgery
+    # (Vérifiée en premier car certains mots-clés pourraient aussi être dans "Theft")
+    if any(x in crime for x in [
+        'CREDIT CARDS', 'EMBEZZLEMENT', 'DEFRAUDING', 'THEFT OF SERVICES',
+        'DOCUMENT WORTHLESS', 'GRAND THEFT / INSURANCE FRAUD', 'THEFT OF IDENTITY',
+        'FORGERY', 'DOCUMENT FORGERY', 'COUNTERFEIT'
+    ]):
         return 'الاحتيال والتزوير / Fraud and Forgery'
-    elif any(x in crime for x in ['VEHICLE - STOLEN', 'BURGLARY', 'THEFT', 'BUNCO', 'PICKPOCKET', 'SHOPLIFTING']):
+
+    # Catégorie : السرقة والسطو / Theft and Burglary
+    elif any(x in crime for x in [
+        'VEHICLE - STOLEN', 'BURGLARY FROM VEHICLE', 'BIKE - STOLEN',
+        'SHOPLIFTING-GRAND THEFT', 'BURGLARY', 'THEFT-GRAND', 'BUNCO, GRAND THEFT',
+        'THEFT PLAIN', 'THEFT FROM MOTOR VEHICLE', 'TILL TAP', 'BOAT - STOLEN',
+        'DISHONEST EMPLOYEE', 'PURSE SNATCHING', 'PETTY THEFT - AUTO REPAIR',
+        'SHOPLIFTING - PETTY THEFT', 'THEFT FROM PERSON', 'BUNCO, PETTY THEFT',
+        'THEFT, PERSON', 'THEFT, COIN MACHINE', 'GRAND THEFT / AUTO REPAIR',
+        'BIKE - ATTEMPTED STOLEN', 'VEHICLE - ATTEMPT STOLEN',
+        'VEHICLE, STOLEN - OTHER', 'PICKPOCKET', 'SHOPLIFTING - ATTEMPT',
+        'BUNCO, ATTEMPT', 'PICKPOCKET, ATTEMPT'
+    ]):
         return 'السرقة والسطو / Theft and Burglary'
-    elif any(x in crime for x in ['ASSAULT', 'BATTERY', 'ROBBERY', 'HOMICIDE', 'KIDNAPPING', 'STALKING', 'ABUSE', 'THREATS']):
+
+    # Catégorie : العنف والاعتداء / Violence and Assault
+    elif any(x in crime for x in [
+        'ASSAULT', 'BATTERY', 'ROBBERY', 'KIDNAPPING', 'CRIMINAL HOMICIDE',
+        'MANSLAUGHTER', 'ATTEMPTED ROBBERY', 'INTIMATE PARTNER - SIMPLE ASSAULT',
+        'INTIMATE PARTNER - AGGRAVATED ASSAULT', 'OTHER ASSAULT',
+        'BATTERY POLICE', 'BATTERY ON A FIREFIGHTER',
+        'EXTORTION', 'FALSE IMPRISONMENT', 'STALKING',
+        'CHILD', 'CHILD ABUSE', 'CHILD NEGLECT', 'CHILD ANNOYING',
+        'CHILD STEALING', 'DISRUPT SCHOOL', 'DRUGS, TO A MINOR',
+        'CRM AGNST CHLD', 'CONTRIBUTING', 'TRAIN WRECKING',
+        'FAILURE TO DISPERSE', 'BLOCKING DOOR INDUCTION CENTER', 'THREATS'
+    ]):
         return 'العنف والاعتداء / Violence and Assault'
-    elif any(x in crime for x in ['VANDALISM', 'ARSON', 'SHOTS FIRED', 'THROWING OBJECT', 'DAMAGE', 'BOMB']):
+
+    # Catégorie : التخريب والتدمير / Vandalism and Destruction
+    elif any(x in crime for x in [
+        'VANDALISM', 'ARSON', 'SHOTS FIRED', 'THROWING OBJECT', 'DAMAGE',
+        'BOMB SCARE', 'DISTURBING THE PEACE'
+    ]):
         return 'التخريب والتدمير / Vandalism and Destruction'
-    elif any(x in crime for x in ['COURT', 'CONTEMPT', 'VIOLATION', 'TRESPASSING', 'WEAPON', 'FIREARM']):
+
+    # Catégorie : المخالفات القانونية والجرائم المتعلقة بالأسلحة / Legal Offences & Weapons
+    elif any(x in crime for x in [
+        'COURT ORDER', 'VIOLATION OF COURT', 'CONTEMPT', 'FALSE POLICE REPORT',
+        'BRIBERY', 'CONSPIRACY', 'THREATENING PHONE CALLS', 'VIOLATION',
+        'VIOLATION OF RESTRAINING ORDER', 'VIOLATION OF TEMPORARY RESTRAINING ORDER',
+        'TRESPASSING', 'RESISTING ARREST', 'UNAUTHORIZED COMPUTER ACCESS',
+        'WEAPON', 'FIREARM', 'BRANDISH', 'DISCHARGE', 'REPLICA FIREARMS',
+        'FIREARMS RESTRAINING ORDER'
+    ]):
         return 'المخالفات القانونية والجرائم المتعلقة بالأسلحة / Legal Offences & Weapons'
-    elif any(x in crime for x in ['RAPE', 'SEX', 'LEWD', 'PIMPING', 'TRAFFICKING', 'INCEST']):
+
+    # Catégorie : الجرائم الجنسية والاتجار / Sexual Crimes & Exploitation
+    elif any(x in crime for x in [
+        'RAPE', 'SEX', 'INDECENT', 'LEWD', 'SODOMY', 'ORAL COPULATION',
+        'SEXUAL PENETRATION', 'CHILD PORNOGRAPHY', 'HUMAN TRAFFICKING',
+        'BATTERY WITH SEXUAL CONTACT', 'BEASTIALITY', 'INCEST', 'PEEPING TOM',
+        'BIGAMY', 'TRAFFICKING', 'PIMPING', 'PANDERING'
+    ]):
         return 'الجرائم الجنسية والاتجار / Sexual Crimes & Exploitation'
+
+    # Catégorie : جرائم متنوعة / Miscellaneous Crimes
+    # (Cette catégorie peut être fusionnée avec le défaut, mais la garder séparée
+    # permet de capturer des cas spécifiques avant de tomber dans le "tout-venant")
+    elif any(x in crime for x in [
+        'OTHER MISCELLANEOUS CRIME', 'ANIMAL', 'CRUELTY', 'ILLEGAL DUMPING',
+        'LYNCHING', 'INCITING', 'THREAT', 'PROWLER', 'INCITING A RIOT',
+        'DRIVING', 'RECKLESS', 'FAILURE TO YIELD', 'DRUNK'
+    ]):
+        return 'جرائم متنوعة / Miscellaneous Crimes'
+
+    # 4. Catégorie par défaut pour tout ce qui n'a pas été capturé
     return 'جرائم متنوعة / Miscellaneous Crimes'
 
 def clean_column_names(df):

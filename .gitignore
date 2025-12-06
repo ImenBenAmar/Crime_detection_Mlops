@@ -1,5 +1,7 @@
-venv
+env
 data
 .env 
 ./processors
 sample.py
+pyvenv.cfg
+venv
