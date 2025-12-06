@@ -12,3 +12,5 @@ pytest
 mlflow>=2,<3
 dagshub
 dotenv
+fastapi
+uvicorn

@@ -33,7 +33,7 @@ DAGSHUB_TOKEN = os.getenv('DAGSHUB_TOKEN')
 DAGSHUB_REPO = os.getenv('DAGSHUB_REPO_NAME')
 EXPERIMENT_NAME = "Crime_MLOPS1"
 
-PROCESSORS_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "processors")
+PROCESSORS_DIR = os.path.join(os.path.dirname(__file__),  "processors")
 
 # Global state storage
 ml_components = {
@@ -308,5 +308,5 @@ def predict_crime(payload: CrimeInput):
 # 6. ENTRY POINT
 # ==========================================
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=5000)
+    uvicorn.run(app, host="0.0.0.0", port=7000)
 #http://127.0.0.1:5000/docs#/

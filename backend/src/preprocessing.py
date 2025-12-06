@@ -10,7 +10,7 @@ from sklearn.preprocessing import LabelEncoder, RobustScaler
 # CONFIGURATION
 # ==========================================
 ARTIFACTS_PATH = "processors"
-DATA_PATH = "data/crime_v1.csv" # Ensure this points to your file
+DATA_PATH = "../../data/crime_v1.csv" # Ensure this points to your file
 
 REQUIRED_ARTIFACTS = [
     "robust_scaler.pkl",
@@ -41,12 +41,12 @@ def categorize_crime(crime):
     # Check fraud first (more specific conditions before general ones)
     if any(x in crime for x in ['CREDIT CARDS', 'EMBEZZLEMENT', 'DEFRAUDING', 'FORGERY', 'IDENTITY']):
         return 'الاحتيال والتزوير / Fraud and Forgery'
+    elif any(x in crime for x in ['VEHICLE - STOLEN', 'BURGLARY', 'THEFT', 'BUNCO', 'PICKPOCKET', 'SHOPLIFTING']):
+        return 'السرقة والسطو / Theft and Burglary'
     elif any(x in crime for x in ['ASSAULT', 'BATTERY', 'ROBBERY', 'HOMICIDE', 'KIDNAPPING', 'STALKING', 'ABUSE', 'THREATS']):
         return 'العنف والاعتداء / Violence and Assault'
     elif any(x in crime for x in ['VANDALISM', 'ARSON', 'SHOTS FIRED', 'THROWING OBJECT', 'DAMAGE', 'BOMB']):
         return 'التخريب والتدمير / Vandalism and Destruction'
-    elif any(x in crime for x in ['VEHICLE - STOLEN', 'BURGLARY', 'THEFT', 'BUNCO', 'PICKPOCKET', 'SHOPLIFTING']):
-        return 'السرقة والسطو / Theft and Burglary'
     elif any(x in crime for x in ['COURT', 'CONTEMPT', 'VIOLATION', 'TRESPASSING', 'WEAPON', 'FIREARM']):
         return 'المخالفات القانونية والجرائم المتعلقة بالأسلحة / Legal Offences & Weapons'
     elif any(x in crime for x in ['RAPE', 'SEX', 'LEWD', 'PIMPING', 'TRAFFICKING', 'INCEST']):
@@ -157,13 +157,17 @@ def encode_features(df, encoders=None):
         print(f"Using {len(encoders)} loaded Feature Encoders.")
         for col, le in encoders.items():
             if col in df.columns:
-                # Handle unseen labels by assigning a default or skipping
-                # Simple approach: convert to string to match training type
+                # Handle unseen labels by mapping them to -1
+                # Convert to string to match training type
                 try:
                     df[col] = le.transform(df[col].astype(str))
-                except ValueError:
-                    # For production: You might map unseen to 'Unknown' or similar
-                    print(f"Warning: Unseen labels in {col}, potential error.")
+                except ValueError as e:
+                    # Handle unseen labels by mapping them to -1
+                    print(f"Warning: Unseen labels in {col}, mapping to -1. Error: {str(e)}")
+                    # Create a mask for known vs unknown labels
+                    known_mask = df[col].astype(str).isin(le.classes_)
+                    df.loc[known_mask, col] = le.transform(df.loc[known_mask, col].astype(str))
+                    df.loc[~known_mask, col] = -1  # Default value for unseen labels
     else:
         print("Fitting new Feature Encoders.")
         encoders = {}
@@ -298,9 +302,6 @@ def run_preprocessing_pipeline():
     print(f"✓ Preprocessing complete.")
     print(f"  - Train shape: {X_train_scaled.shape}")
     print(f"  - Test shape: {X_test_scaled.shape}")
-
-
-
 
 if __name__ == "__main__":
     run_preprocessing_pipeline()
