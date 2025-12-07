@@ -12,9 +12,12 @@ services:
       - "5000:5000"
   
     environment:
-      DAGSHUB_USERNAME: ${DAGSHUB_USERNAME}
-      DAGSHUB_TOKEN: ${DAGSHUB_TOKEN}
-      DAGSHUB_REPO_NAME: ${DAGSHUB_REPO_NAME}
+      - DAGSHUB_USERNAME=${DAGSHUB_USERNAME}
+      - DAGSHUB_TOKEN=${DAGSHUB_TOKEN}
+      - DAGSHUB_REPO_NAME=${DAGSHUB_REPO_NAME}
+      # Mapping automatique pour que MLflow s'authentifie sans navigateur
+      - MLFLOW_TRACKING_USERNAME=${DAGSHUB_USERNAME}
+      - MLFLOW_TRACKING_PASSWORD=${DAGSHUB_TOKEN}
 
    
     

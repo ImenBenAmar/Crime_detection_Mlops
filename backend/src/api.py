@@ -5,6 +5,7 @@ import numpy as np
 from dotenv import load_dotenv
 import mlflow
 import dagshub
+import dagshub.auth # Import nécessaire pour l'auth silencieuse
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field, ConfigDict
@@ -24,6 +25,7 @@ DAGSHUB_USERNAME = os.getenv('DAGSHUB_USERNAME')
 DAGSHUB_TOKEN = os.getenv('DAGSHUB_TOKEN')
 DAGSHUB_REPO = os.getenv('DAGSHUB_REPO_NAME')
 EXPERIMENT_NAME = "Crime_MLOPS1"
+REPO_OWNER = "YomnaJL"  # Propriétaire du repo
 
 # Global state
 ml_components = {
@@ -65,63 +67,77 @@ class PredictionOutput(BaseModel):
 # --- Helper Functions ---
 
 def setup_mlflow():
-    """Configures MLflow tracking uri and authentication."""
+    """Configures MLflow tracking uri and authentication safely for Docker."""
     
-    # Load variables
     username = os.getenv('DAGSHUB_USERNAME')
     token = os.getenv('DAGSHUB_TOKEN')
     repo_name = os.getenv('DAGSHUB_REPO_NAME')
-    # The repo owner might be different from the user running the script
-    # If YomnaJL owns the repo, hardcode it or add a new env var
-    repo_owner = "YomnaJL" 
+    
+    if not token or not repo_name:
+        print("⚠️ Variables d'environnement DAGSHUB manquantes.")
+        return
 
-    if all([username, token, repo_name]):
-        # Set auth variables for MLflow
-        os.environ['MLFLOW_TRACKING_USERNAME'] = username
-        os.environ['MLFLOW_TRACKING_PASSWORD'] = token
-        
-        # Construct Tracking URI
-        mlflow_tracking_uri = f"https://dagshub.com/{repo_owner}/{repo_name}.mlflow"
-        
-        # Initialize DagsHub (handles auth under the hood)
-        try:
-            dagshub.init(repo_owner=repo_owner, repo_name=repo_name, mlflow=True)
-        except Exception as e:
-            print(f"⚠️ dagshub.init failed: {e}. Falling back to manual config.")
-        
-        # Set URI explicitly
-        mlflow.set_tracking_uri(mlflow_tracking_uri)
-        print(f"✅ MLflow connected: {mlflow_tracking_uri}")
-    else:
-        print("⚠️ Missing DagsHub credentials in .env. MLflow loading might fail.")
+    # 1. Force l'authentification DagsHub (Empêche l'ouverture du navigateur)
+    try:
+        dagshub.auth.add_app_token(token)
+        print("✅ DagsHub Token ajouté.")
+    except Exception as e:
+        print(f"⚠️ Erreur lors de l'ajout du token DagsHub: {e}")
+
+    # 2. Configurer les variables d'environnement MLflow EXPLICITEMENT
+    # Cela garantit que le client MLflow a les identifiants même si dagshub.init échoue
+    os.environ['MLFLOW_TRACKING_USERNAME'] = username
+    os.environ['MLFLOW_TRACKING_PASSWORD'] = token
+    
+    tracking_uri = f"https://dagshub.com/{REPO_OWNER}/{repo_name}.mlflow"
+    
+    # 3. Tenter l'initialisation DagsHub, mais avec un fallback
+    try:
+        dagshub.init(repo_owner=REPO_OWNER, repo_name=repo_name, mlflow=True)
+        print(f"✅ DagsHub initialized. Tracking URI: {mlflow.get_tracking_uri()}")
+    except Exception as e:
+        print(f"⚠️ dagshub.init a échoué ({e}). Passage en configuration manuelle MLflow.")
+        mlflow.set_tracking_uri(tracking_uri)
+        print(f"✅ MLflow Tracking URI forcé manuellement : {tracking_uri}")
 
 def load_best_model():
     """Loads best model from MLflow based on F1 Score."""
     try:
+        print(f"🔍 Recherche de l'expérience : {EXPERIMENT_NAME}...")
         experiment = mlflow.get_experiment_by_name(EXPERIMENT_NAME)
+        
         if not experiment:
-            print(f"❌ Experiment '{EXPERIMENT_NAME}' not found.")
+            # Essayer de récupérer par ID si le nom échoue ou lister tout
+            print(f"❌ Expérience '{EXPERIMENT_NAME}' introuvable. Vérifiez le nom exact sur DagsHub.")
             return None, None
+        
+        print(f"✅ Expérience trouvée ID: {experiment.experiment_id}")
         
         runs = mlflow.search_runs(
             experiment_ids=[experiment.experiment_id],
             order_by=["metrics.f1_weighted DESC"],
             max_results=1
         )
+        
         if runs.empty:
-            print("❌ No runs found.")
+            print("❌ Aucun run trouvé dans cette expérience.")
             return None, None
         
         best_run = runs.iloc[0]
         run_id = best_run.run_id
-        model_name = best_run['tags.model_name']
-        stage = best_run['tags.stage']
         
-        print(f"🏆 Best Model: {model_name} ({stage}) - F1: {best_run['metrics.f1_weighted']:.4f}")
+        # Gestion des tags manquants
+        model_name = best_run.get('tags.model_name', 'UnknownModel')
+        stage = best_run.get('tags.stage', 'UnknownStage')
+        f1_score = best_run.get('metrics.f1_weighted', 0.0)
+        
+        print(f"🏆 Meilleur Modèle trouvé : {model_name} ({stage}) - F1: {f1_score:.4f}")
+        print(f"📥 Téléchargement de l'artefact depuis le Run ID: {run_id}...")
 
         # Construct filename based on training script convention
         artifact_path = f"{model_name}_{stage}.pkl"
         
+        # Download artifact
         local_path = mlflow.artifacts.download_artifacts(run_id=run_id, artifact_path=artifact_path)
         
         with open(local_path, 'rb') as f:
@@ -129,7 +145,10 @@ def load_best_model():
             
         return model, f"{model_name}_{stage}"
     except Exception as e:
-        print(f"❌ Model Load Error: {e}")
+        print(f"❌ Erreur critique lors du chargement du modèle : {e}")
+        # Pour le debug, afficher plus de détails si nécessaire
+        import traceback
+        traceback.print_exc()
         return None, None
 
 # --- Lifecycle Manager ---
@@ -141,18 +160,23 @@ async def lifespan(app: FastAPI):
     setup_mlflow()
     
     # 2. Initialize Feature Store (loads encoders/scaler)
-    store = CrimeFeatureStore(processors_path="processors")
-    store.load_artifacts()
-    ml_components["store"] = store
+    print("📦 Chargement du Feature Store...")
+    try:
+        store = CrimeFeatureStore(processors_path="processors")
+        store.load_artifacts()
+        ml_components["store"] = store
+        print("✅ Feature Store chargé.")
+    except Exception as e:
+        print(f"❌ Erreur Feature Store: {e}")
     
     # 3. Load Model
     model, name = load_best_model()
     if model:
         ml_components["model"] = model
         ml_components["model_name"] = name
-        print("🚀 Server Ready.")
+        print("🚀 Server Ready and Model Loaded.")
     else:
-        print("⚠️ No model loaded. Endpoints will fail.")
+        print("⚠️ ATTENTION: Aucun modèle chargé. L'API répondra, mais /predict échouera.")
         
     yield
     print("🛑 Shutting down.")
@@ -162,7 +186,8 @@ app = FastAPI(title="Crime API", lifespan=lifespan)
 
 @app.get("/")
 def root():
-    return {"message": "Crime Prediction API Running"}
+    status = "Ready" if ml_components["model"] else "Model Missing"
+    return {"message": "Crime Prediction API Running", "status": status}
 
 @app.get("/health")
 def health():
@@ -173,15 +198,17 @@ def health():
 @app.post("/predict", response_model=PredictionOutput)
 def predict(payload: CrimeInput):
     if not ml_components["model"]:
-        raise HTTPException(status_code=503, detail="Model not ready")
+        raise HTTPException(status_code=503, detail="Model not initialized on server.")
     
     try:
         # Convert Pydantic object to dict
         data = payload.model_dump(by_alias=True)
         
         # 1. Feature Store Processing
-        # This handles cleaning, defaults for missing cols, encoding, and scaling
         store = ml_components["store"]
+        if not store:
+             raise HTTPException(status_code=500, detail="Feature Store not initialized")
+
         X_input = store.get_online_features(data)
         
         # 2. Prediction
@@ -203,9 +230,7 @@ def predict(payload: CrimeInput):
             "model_info": ml_components["model_name"]
         }
     except Exception as e:
-        # Print error to console for debugging
-        import traceback
-        traceback.print_exc()
+        print(f"Prediction Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
