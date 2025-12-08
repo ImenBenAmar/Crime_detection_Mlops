@@ -3,7 +3,7 @@ pipeline {
 
     environment {
         // Remplacez par votre vrai nom d'utilisateur Docker Hub
-        DOCKER_HUB_USER = "yomnajl" 
+        DOCKER_HUB_USER = "YomnaJL" 
         IMAGE_TAG = "latest"
     }
 
