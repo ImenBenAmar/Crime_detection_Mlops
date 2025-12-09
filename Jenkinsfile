@@ -1,69 +1,58 @@
 pipeline {
-    agent any
+    agent none  // On ne définit pas d'agent global pour pouvoir choisir par étape
 
     environment {
-        // On garde uniquement le tag ici. 
-        // Le user sera récupéré via les Credentials Jenkins.
         IMAGE_TAG = "latest"
     }
 
     stages {
-        
-        // --- ÉTAPE 1 : INSTALLATION ---
-        stage('Setup Environment') {
-            steps {
-                script {
-                    echo "🐍 Création de l'environnement virtuel..."
-                    sh '''
-                        python3 -m venv venv
-                        . venv/bin/activate
-                        pip install --upgrade pip
-                        pip install -r backend/src/requirements-backend.txt
-                        pip install pytest httpx
-                    '''
+        // --- ÉTAPE 1 : TESTS (DANS UN CONTENEUR PYTHON) ---
+        stage('Run Tests') {
+            agent {
+                docker { 
+                    image 'python:3.9' 
+                    // On monte le code actuel dans le conteneur
+                    reuseNode true 
                 }
             }
-        }
-
-        // --- ÉTAPE 2 : TESTS (CI) ---
-        stage('Run Tests') {
             steps {
+                // On injecte les secrets DagsHub
                 withCredentials([usernamePassword(credentialsId: 'dagshub-credentials', usernameVariable: 'DAGSHUB_USERNAME', passwordVariable: 'DAGSHUB_TOKEN')]) {
                     script {
+                        echo "🧪 Lancement des tests dans le conteneur Python..."
+                        
+                        // Plus besoin de venv ! On est déjà dans un environnement Python isolé.
                         sh '''
-                            . venv/bin/activate
+                            pip install --upgrade pip
+                            pip install -r backend/src/requirements-backend.txt
+                            pip install pytest httpx
                             
                             export DAGSHUB_REPO_NAME="MLOPS_Project"
                             export PYTHONPATH=$PYTHONPATH:$(pwd)/backend/src
                             
-                            echo "🧪 Lancement des tests Preprocessing..."
-                            python3 -m pytest testing/preprocessing_test.py
-                            
-                            echo "🧪 Lancement des tests Model Loading..."
-                            python3 -m pytest testing/test_model_loading.py
+                            python -m pytest testing/preprocessing_test.py
+                            python -m pytest testing/test_model_loading.py
                         '''
                     }
                 }
             }
         }
 
-        // --- ÉTAPE 3 : BUILD & PUSH (CD) ---
+        // --- ÉTAPE 2 : BUILD & PUSH (SUR LA MACHINE HÔTE) ---
         stage('Build & Push Docker') {
+            agent any // Ici on a besoin de Docker-in-Docker, donc on revient sur l'agent principal
+            
             steps {
                 script {
-                    echo "🐳 Connexion et Push vers Docker Hub..."
+                    echo "🐳 Construction des images finales..."
                     
-                    // Jenkins met le username dans DOCKER_USER et le password dans DOCKER_PASS
                     withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
                         sh '''
-                            # 1. Login
                             echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
 
-                            # 2. Backend (On utilise $DOCKER_USER partout pour être cohérent)
                             docker build -t $DOCKER_USER/crime-backend:${IMAGE_TAG} -f backend/src/Dockerfile .
                             docker push $DOCKER_USER/crime-backend:${IMAGE_TAG}
 
-                            # 3. Frontend
                             docker build -t $DOCKER_USER/crime-frontend:${IMAGE_TAG} -f frontend/Dockerfile ./frontend
                             docker push $DOCKER_USER/crime-frontend:${IMAGE_TAG}
                         '''
@@ -72,10 +61,9 @@ pipeline {
             }
         }
     }
-
+    
     post {
         always {
-            sh 'rm -rf venv'
             cleanWs()
         }
     }
