@@ -105,7 +105,7 @@ pipeline {
             }
         }
         success {
-            echo "✅ Succès ! Images disponibles sur : https://hub.docker.com/r/imen835/mlops-crime"
+            echo "✅ Succès ! Images disponibles sur : https://hub.docker.com/r/yomnajl/mlops-crime"
         }
         failure {
             echo "❌ Échec du pipeline."
