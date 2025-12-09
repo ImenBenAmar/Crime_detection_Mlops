@@ -1,0 +1,23 @@
+# Ignorer les fichiers de configuration sensibles
+.env
+.env.local
+
+# Ignorer les fichiers temporaires Python et caches
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+
+# Ignorer l'environnement virtuel local (s'il existe)
+venv/
+env/
+.venv/
+
+# Ignorer le dossier de Git
+.git
+.gitignore
+
+# Ignorer les dossiers de tests ou de logs inutiles en prod
+testing/
+logs/
+processors/  

@@ -1,70 +1,114 @@
 pipeline {
-    agent none  // On ne définit pas d'agent global pour pouvoir choisir par étape
+    agent any
 
     environment {
-        IMAGE_TAG = "latest"
+        // --- Configuration Docker Hub ---
+        // Votre repo unique
+        DOCKER_IMAGE_NAME = 'imen835/mlops-crime'
+        
+        // --- Secrets (Injectés depuis Jenkins Credentials) ---
+        // Assurez-vous d'avoir créé ces IDs dans Jenkins > Credentials
+        DAGSHUB_TOKEN = credentials('dagshub-token-id')
+        DOCKERHUB_CREDS = credentials('dockerhub-id') // User: imen835, Pass: ...
+        ARIZE_API_KEY = credentials('arize-api-key-id')
+        
+        // --- Variables non sensibles ---
+        DAGSHUB_USERNAME = 'YomnaJL'
+        DAGSHUB_REPO_NAME = 'MLOPS_Project'
+        MLFLOW_TRACKING_URI = 'https://dagshub.com/YomnaJL/MLOPS_Project.mlflow'
+        ARIZE_SPACE_ID = 'U3BhY2U6MzEyNjA6QzFTdw=='
     }
 
     stages {
-        // --- ÉTAPE 1 : TESTS (DANS UN CONTENEUR PYTHON) ---
-        stage('Run Tests') {
-            agent {
-                docker { 
-                    image 'python:3.9' 
-                    // On monte le code actuel dans le conteneur
-                    reuseNode true 
-                }
-            }
+        // 1. Nettoyage et Récupération du code
+        stage('Clean & Checkout') {
             steps {
-                // On injecte les secrets DagsHub
-                withCredentials([usernamePassword(credentialsId: 'dagshub-credentials', usernameVariable: 'DAGSHUB_USERNAME', passwordVariable: 'DAGSHUB_TOKEN')]) {
-                    script {
-                        echo "🧪 Lancement des tests dans le conteneur Python..."
+                cleanWs()
+                checkout scm
+            }
+        }
+
+        // 2. Tests Unitaires (Backend)
+        stage('Test Backend') {
+            steps {
+                script {
+                    echo "🚀 Lancement des tests dans un environnement isolé..."
+                    // On utilise Docker pour lancer les tests (Python 3.9)
+                    docker.image('python:3.9-slim').inside {
+                        // Installation des dépendances
+                        sh 'pip install --no-cache-dir -r backend/src/requirements-backend.txt'
+                        sh 'pip install pytest'
                         
-                        // Plus besoin de venv ! On est déjà dans un environnement Python isolé.
-                        sh '''
-                            pip install --upgrade pip
-                            pip install -r backend/src/requirements-backend.txt
-                            pip install pytest httpx
-                            
-                            export DAGSHUB_REPO_NAME="MLOPS_Project"
-                            export PYTHONPATH=$PYTHONPATH:$(pwd)/backend/src
-                            
-                            python -m pytest testing/preprocessing_test.py
-                            python -m pytest testing/test_model_loading.py
-                        '''
+                        // Exécution des tests avec injection des secrets en mémoire
+                        // (Ils ne seront pas écrits sur le disque)
+                        withEnv([
+                            "DAGSHUB_TOKEN=${DAGSHUB_TOKEN}",
+                            "DAGSHUB_USERNAME=${DAGSHUB_USERNAME}",
+                            "DAGSHUB_REPO_NAME=${DAGSHUB_REPO_NAME}",
+                            "MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI}",
+                            "ARIZE_SPACE_ID=${ARIZE_SPACE_ID}",
+                            "ARIZE_API_KEY=${ARIZE_API_KEY}"
+                        ]) {
+                            // On ajoute le dossier src au PYTHONPATH pour les imports
+                            sh 'export PYTHONPATH=$PYTHONPATH:$(pwd)/backend/src && pytest testing/'
+                        }
                     }
                 }
             }
         }
 
-        // --- ÉTAPE 2 : BUILD & PUSH (SUR LA MACHINE HÔTE) ---
-        stage('Build & Push Docker') {
-            agent any // Ici on a besoin de Docker-in-Docker, donc on revient sur l'agent principal
-            
+        // 3. Construction des Images (Build)
+        stage('Build Images') {
             steps {
                 script {
-                    echo "🐳 Construction des images finales..."
+                    echo "🏗️ Construction du Backend..."
+                    // Tag: backend-BuildNumber (ex: backend-42)
+                    sh "docker build -t ${DOCKER_IMAGE_NAME}:backend-${BUILD_NUMBER} -t ${DOCKER_IMAGE_NAME}:backend-latest ./backend/src"
                     
-                    withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
-                        sh '''
-                            echo $DOCKER_PASS | docker login -u $DOCKER_USER --password-stdin
+                    echo "🏗️ Construction du Frontend..."
+                    // Tag: frontend-BuildNumber (ex: frontend-42)
+                    sh "docker build -t ${DOCKER_IMAGE_NAME}:frontend-${BUILD_NUMBER} -t ${DOCKER_IMAGE_NAME}:frontend-latest ./frontend"
+                }
+            }
+        }
 
-                            docker build -t $DOCKER_USER/crime-backend:${IMAGE_TAG} -f backend/src/Dockerfile .
-                            docker push $DOCKER_USER/crime-backend:${IMAGE_TAG}
-
-                            docker build -t $DOCKER_USER/crime-frontend:${IMAGE_TAG} -f frontend/Dockerfile ./frontend
-                            docker push $DOCKER_USER/crime-frontend:${IMAGE_TAG}
-                        '''
-                    }
+        // 4. Envoi vers Docker Hub (Push)
+        stage('Push to Docker Hub') {
+            steps {
+                script {
+                    echo "🔓 Connexion au registre..."
+                    sh "echo $DOCKERHUB_CREDS_PSW | docker login -u $DOCKERHUB_CREDS_USR --password-stdin"
+                    
+                    echo "⬆️ Push des images..."
+                    // Push Backend (Version précise + Latest)
+                    sh "docker push ${DOCKER_IMAGE_NAME}:backend-${BUILD_NUMBER}"
+                    sh "docker push ${DOCKER_IMAGE_NAME}:backend-latest"
+                    
+                    // Push Frontend (Version précise + Latest)
+                    sh "docker push ${DOCKER_IMAGE_NAME}:frontend-${BUILD_NUMBER}"
+                    sh "docker push ${DOCKER_IMAGE_NAME}:frontend-latest"
                 }
             }
         }
     }
-    
+
     post {
         always {
-            cleanWs()
+            script {
+                echo "🧹 Nettoyage des images locales..."
+                // On supprime les images de la machine Jenkins pour ne pas saturer le disque
+                sh "docker rmi ${DOCKER_IMAGE_NAME}:backend-${BUILD_NUMBER} || true"
+                sh "docker rmi ${DOCKER_IMAGE_NAME}:backend-latest || true"
+                sh "docker rmi ${DOCKER_IMAGE_NAME}:frontend-${BUILD_NUMBER} || true"
+                sh "docker rmi ${DOCKER_IMAGE_NAME}:frontend-latest || true"
+                sh "docker logout"
+            }
+        }
+        success {
+            echo "✅ Succès ! Images disponibles sur : https://hub.docker.com/r/imen835/mlops-crime"
+        }
+        failure {
+            echo "❌ Échec du pipeline."
         }
     }
 }
