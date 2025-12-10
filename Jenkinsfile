@@ -2,17 +2,14 @@ pipeline {
     agent any
 
     environment {
-        // --- Configuration Docker Hub ---
-        // Votre repo unique
         DOCKER_IMAGE_NAME = 'imen835/mlops-crime'
         
-        // --- Secrets (Injectés depuis Jenkins Credentials) ---
-        // Assurez-vous d'avoir créé ces IDs dans Jenkins > Credentials
+        // Credentials
         DAGSHUB_TOKEN = credentials('dagshub-token-id')
-        DOCKERHUB_CREDS = credentials('dockerhub-id') // User: imen835, Pass: ...
+        DOCKERHUB_CREDS = credentials('dockerhub-id')
         ARIZE_API_KEY = credentials('arize-api-key-id')
         
-        // --- Variables non sensibles ---
+        // Configs
         DAGSHUB_USERNAME = 'YomnaJL'
         DAGSHUB_REPO_NAME = 'MLOPS_Project'
         MLFLOW_TRACKING_URI = 'https://dagshub.com/YomnaJL/MLOPS_Project.mlflow'
@@ -20,7 +17,6 @@ pipeline {
     }
 
     stages {
-        // 1. Nettoyage et Récupération du code
         stage('Clean & Checkout') {
             steps {
                 cleanWs()
@@ -28,19 +24,20 @@ pipeline {
             }
         }
 
-        // 2. Tests Unitaires (Backend)
-        stage('Test Backend') {
+        // --- OPTIMISATION 1 : Tests & Qualité ---
+        stage('Quality & Tests') {
             steps {
                 script {
-                    echo "🚀 Lancement des tests dans un environnement isolé..."
-                    // On utilise Docker pour lancer les tests (Python 3.9)
                     docker.image('python:3.9-slim').inside {
-                        // Installation des dépendances
                         sh 'pip install --no-cache-dir -r backend/src/requirements-backend.txt'
-                        sh 'pip install pytest'
+                        // Ajout de flake8 pour la qualité du code et pytest-cov pour la couverture (optionnel)
+                        sh 'pip install pytest flake8' 
                         
-                        // Exécution des tests avec injection des secrets en mémoire
-                        // (Ils ne seront pas écrits sur le disque)
+                        echo "🔍 Vérification de la qualité du code (Linting)..."
+                        // Continue même si erreurs mineures (facultatif)
+                        sh 'flake8 backend/src --count --select=E9,F63,F7,F82 --show-source --statistics || true'
+
+                        echo "🚀 Lancement des tests..."
                         withEnv([
                             "DAGSHUB_TOKEN=${DAGSHUB_TOKEN}",
                             "DAGSHUB_USERNAME=${DAGSHUB_USERNAME}",
@@ -49,44 +46,55 @@ pipeline {
                             "ARIZE_SPACE_ID=${ARIZE_SPACE_ID}",
                             "ARIZE_API_KEY=${ARIZE_API_KEY}"
                         ]) {
-                            // On ajoute le dossier src au PYTHONPATH pour les imports
-                            sh 'export PYTHONPATH=$PYTHONPATH:$(pwd)/backend/src && pytest testing/'
+                            // OPTIMISATION 2 : Génération d'un rapport XML pour Jenkins
+                            sh 'export PYTHONPATH=$PYTHONPATH:$(pwd)/backend/src && pytest testing/ --junitxml=test-results.xml'
                         }
                     }
                 }
             }
-        }
-
-        // 3. Construction des Images (Build)
-        stage('Build Images') {
-            steps {
-                script {
-                    echo "🏗️ Construction du Backend..."
-                    // Tag: backend-BuildNumber (ex: backend-42)
-                    sh "docker build -t ${DOCKER_IMAGE_NAME}:backend-${BUILD_NUMBER} -t ${DOCKER_IMAGE_NAME}:backend-latest ./backend/src"
-                    
-                    echo "🏗️ Construction du Frontend..."
-                    // Tag: frontend-BuildNumber (ex: frontend-42)
-                    sh "docker build -t ${DOCKER_IMAGE_NAME}:frontend-${BUILD_NUMBER} -t ${DOCKER_IMAGE_NAME}:frontend-latest ./frontend"
+            // Publication des résultats dans l'interface Jenkins
+            post {
+                always {
+                    junit 'test-results.xml'
                 }
             }
         }
 
-        // 4. Envoi vers Docker Hub (Push)
-        stage('Push to Docker Hub') {
+        // --- OPTIMISATION 3 : Build & Push en Parallèle ---
+        stage('Build & Push Parallel') {
+            // On se connecte une seule fois au début
             steps {
                 script {
-                    echo "🔓 Connexion au registre..."
-                    sh "echo $DOCKERHUB_CREDS_PSW | docker login -u $DOCKERHUB_CREDS_USR --password-stdin"
+                     echo "🔓 Connexion au registre..."
+                     sh "echo $DOCKERHUB_CREDS_PSW | docker login -u $DOCKERHUB_CREDS_USR --password-stdin"
+                }
+                
+                parallel {
+                    stage('Backend Pipeline') {
+                        steps {
+                            script {
+                                echo "🏗️ Building Backend..."
+                                sh "docker build -t ${DOCKER_IMAGE_NAME}:backend-${BUILD_NUMBER} -t ${DOCKER_IMAGE_NAME}:backend-latest ./backend/src"
+                                
+                                echo "⬆️ Pushing Backend..."
+                                sh "docker push ${DOCKER_IMAGE_NAME}:backend-${BUILD_NUMBER}"
+                                sh "docker push ${DOCKER_IMAGE_NAME}:backend-latest"
+                            }
+                        }
+                    }
                     
-                    echo "⬆️ Push des images..."
-                    // Push Backend (Version précise + Latest)
-                    sh "docker push ${DOCKER_IMAGE_NAME}:backend-${BUILD_NUMBER}"
-                    sh "docker push ${DOCKER_IMAGE_NAME}:backend-latest"
-                    
-                    // Push Frontend (Version précise + Latest)
-                    sh "docker push ${DOCKER_IMAGE_NAME}:frontend-${BUILD_NUMBER}"
-                    sh "docker push ${DOCKER_IMAGE_NAME}:frontend-latest"
+                    stage('Frontend Pipeline') {
+                        steps {
+                            script {
+                                echo "🏗️ Building Frontend..."
+                                sh "docker build -t ${DOCKER_IMAGE_NAME}:frontend-${BUILD_NUMBER} -t ${DOCKER_IMAGE_NAME}:frontend-latest ./frontend"
+                                
+                                echo "⬆️ Pushing Frontend..."
+                                sh "docker push ${DOCKER_IMAGE_NAME}:frontend-${BUILD_NUMBER}"
+                                sh "docker push ${DOCKER_IMAGE_NAME}:frontend-latest"
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -95,8 +103,7 @@ pipeline {
     post {
         always {
             script {
-                echo "🧹 Nettoyage des images locales..."
-                // On supprime les images de la machine Jenkins pour ne pas saturer le disque
+                echo "🧹 Nettoyage..."
                 sh "docker rmi ${DOCKER_IMAGE_NAME}:backend-${BUILD_NUMBER} || true"
                 sh "docker rmi ${DOCKER_IMAGE_NAME}:backend-latest || true"
                 sh "docker rmi ${DOCKER_IMAGE_NAME}:frontend-${BUILD_NUMBER} || true"
@@ -105,7 +112,7 @@ pipeline {
             }
         }
         success {
-            echo "✅ Succès ! Images disponibles sur : https://hub.docker.com/r/imen835/mlops-crime"
+            echo "✅ Succès ! Build #${BUILD_NUMBER} déployé."
         }
         failure {
             echo "❌ Échec du pipeline."
