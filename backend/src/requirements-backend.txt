@@ -26,3 +26,4 @@ pytest         # Pour les tests unitaires et d'intégration
 
 # --- Standard Library (pas besoin de l'ajouter, mais pour info) ---
 datetime
+deepchecks
