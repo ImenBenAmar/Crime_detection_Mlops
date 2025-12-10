@@ -41,16 +41,16 @@ spec:
           httpGet:
             path: / # FastAPI a une route racine
             port: 5000
-          failureThreshold: 30 # Essaie 30 fois
-          periodSeconds: 10    # Toutes les 10s (Total 300s pour télécharger le modèle)
+          failureThreshold: 60 # Essaie 60 fois
+          periodSeconds: 10    # Toutes les 10s (Total 600s pour télécharger le modèle)
         
         # Vérifie si l'API est toujours vivante en continu
         livenessProbe:
           httpGet:
             path: /
             port: 5000
-          initialDelaySeconds: 5
-          periodSeconds: 10
+          initialDelaySeconds: 15
+          periodSeconds: 20
 
 ---
 apiVersion: v1

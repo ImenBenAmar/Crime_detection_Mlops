@@ -53,7 +53,7 @@ python -m pytest testing/test_model_loading.py -s
 
 ouvrir jenkins:http://localhost:8080/
 docker-hub-credentials
- sudo chmod 666 /var/run/docker.sock
+sudo chmod 666 /var/run/docker.sock
 
 k8s:
 kubectl apply -f secrets.yml
@@ -62,3 +62,10 @@ kubectl apply -f frontend-deployment.yml
 kubectl get pods
 kubectl port-forward service/frontend-service 8501:8501
 http://127.0.0.1:8501
+
+testing:
+kubectl port-forward service/backend-service 5000:5000
+python test_live_k8s.py
+
+ 1. Deepchecks (Validation) →→ 2. Evidently (Monitoring ML) →→ 3. Déploiement Public (Cloud/Heroku).
+
