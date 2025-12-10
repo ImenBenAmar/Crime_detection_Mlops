@@ -54,3 +54,11 @@ python -m pytest testing/test_model_loading.py -s
 ouvrir jenkins:http://localhost:8080/
 docker-hub-credentials
  sudo chmod 666 /var/run/docker.sock
+
+k8s:
+kubectl apply -f secrets.yml
+kubectl apply -f backend-deployment.yml
+kubectl apply -f frontend-deployment.yml
+kubectl get pods
+kubectl port-forward service/frontend-service 8501:8501
+http://127.0.0.1:8501
