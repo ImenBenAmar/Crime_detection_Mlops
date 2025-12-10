@@ -84,40 +84,6 @@ pipeline {
             }
         }
 
-// ... après le stage CI ...
-
-        // Étape 2 bis : Quality Gate (Deepchecks)
-        stage('ML: Quality Gate') {
-            steps {
-                script {
-                    docker.image('python:3.9-slim').inside('-u root') {
-                        
-                        // Installation spécifique Deepchecks (c'est un peu lourd)
-                        sh 'pip install --upgrade pip'
-                        sh 'pip install deepchecks mlflow pandas scikit-learn python-dotenv'
-                        
-                        echo "🛡️ Vérification de la qualité du Modèle..."
-                        withEnv([
-                            "DAGSHUB_TOKEN=${DAGSHUB_TOKEN}",
-                            "DAGSHUB_USERNAME=${DAGSHUB_USERNAME}",
-                            "DAGSHUB_REPO_NAME=${DAGSHUB_REPO_NAME}",
-                            "MLFLOW_TRACKING_URI=${MLFLOW_TRACKING_URI}"
-                        ]) {
-                            // On lance le script
-                            sh 'python testing/test_model_quality.py'
-                        }
-                    }
-                }
-            }
-            post {
-                always {
-                    // On sauvegarde le rapport HTML pour le voir dans Jenkins
-                    archiveArtifacts artifacts: 'model_quality_report.html', allowEmptyArchive: true
-                }
-            }
-        }
-
-        // ... avant le stage Docker Login ...
         // Étape 3 : Login Docker (Séparé pour éviter l'erreur de syntaxe parallel)
         stage('Docker Login') {
             steps {

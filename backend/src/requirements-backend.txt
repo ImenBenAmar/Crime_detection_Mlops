@@ -4,7 +4,7 @@
 
 # --- Data Science & Machine Learning ---
 pandas
-numpy
+numpy<2.0
 scikit-learn
 xgboost
 lightgbm
@@ -27,3 +27,5 @@ pytest         # Pour les tests unitaires et d'intégration
 # --- Standard Library (pas besoin de l'ajouter, mais pour info) ---
 datetime
 deepchecks
+anywidget
+ipywidgets

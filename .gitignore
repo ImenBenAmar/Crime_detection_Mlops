@@ -1,7 +1,21 @@
-env
-data
-.env 
-./processors
-venv 
-mlops
-jenkins
+# Virtual environments
+env/
+venv/
+
+# Environment variables
+.env
+.env.local
+
+# Data and artifacts
+data/
+backend/src/processors/
+mlruns/
+
+# IDE and OS
+.vscode/
+.idea/
+__pycache__/
+*.pyc
+
+# Kubernetes secrets
+k8s/secrets.yml
