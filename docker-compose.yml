@@ -4,7 +4,7 @@ services:
   # Service 1: Le Backend (notre API)
   backend:
     build:
-      context: ./backend/src  # Indique où trouver le Dockerfile
+      context: ./backend/src  
     container_name: crime-api-backend
     env_file:
       - .env
@@ -18,9 +18,6 @@ services:
       # Mapping automatique pour que MLflow s'authentifie sans navigateur
       - MLFLOW_TRACKING_USERNAME=${DAGSHUB_USERNAME}
       - MLFLOW_TRACKING_PASSWORD=${DAGSHUB_TOKEN}
-
-   
-    
 
   # Service 2: Le Frontend (notre interface Streamlit)
   frontend:
