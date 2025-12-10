@@ -53,4 +53,4 @@ python -m pytest testing/test_model_loading.py -s
 
 ouvrir jenkins:http://localhost:8080/
 docker-hub-credentials
-
+ sudo chmod 666 /var/run/docker.sock
