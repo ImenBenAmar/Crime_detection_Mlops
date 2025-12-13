@@ -11,6 +11,8 @@ dvc push -r origin
 
 .\env\Scripts\Activate.ps1
 http://127.0.0.1:7000/
+
+exemple : 
 {
   "DATE OCC": "01/15/2023 02:30:00 PM",
   "TIME OCC": 1430,
@@ -67,5 +69,5 @@ testing:
 kubectl port-forward service/backend-service 5000:5000
 python test_live_k8s.py
 
- 1. Deepchecks (Validation) →→ 2. Evidently (Monitoring ML) →→ 3. Déploiement Public (Cloud/Heroku).
+1. Deepchecks (Validation) →→ 2. Evidently (Monitoring ML) →→ 3. Déploiement Public (Cloud/Heroku).
 
