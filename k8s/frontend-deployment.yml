@@ -16,12 +16,12 @@ spec:
     spec:
       containers:
       - name: frontend
-        image: username/mlops-crime:frontend-latest
+        # 👇 LE PLACEHOLDER QUE JENKINS VA REMPLACER
+        image: REPLACE_ME_FRONTEND_IMAGE
         imagePullPolicy: Always
         ports:
         - containerPort: 8501
         
-        # Utilisation de la ConfigMap pour l'URL
         env:
         - name: API_URL
           valueFrom:
@@ -37,7 +37,6 @@ spec:
             memory: "512Mi"
             cpu: "500m"
 
-        # Streamlit n'a pas de route /health par défaut simple, on teste le port TCP
         livenessProbe:
           tcpSocket:
             port: 8501

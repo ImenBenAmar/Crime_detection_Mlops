@@ -16,35 +16,31 @@ spec:
     spec:
       containers:
       - name: backend
-        image: username/mlops-crime:backend-latest
+        # 👇 LE PLACEHOLDER QUE JENKINS VA REMPLACER
+        image: REPLACE_ME_BACKEND_IMAGE 
         imagePullPolicy: Always
         ports:
         - containerPort: 5000
         
-        # --- 1. Gestion des Secrets et Config ---
         envFrom:
         - secretRef:
             name: mlops-secrets
         
-        # --- 2. Allocation des Ressources (CRUCIAL MLOps) ---
         resources:
           requests:
-            memory: "256Mi" # Mémoire garantie
-            cpu: "250m"     # 1/4 de coeur CPU garanti
+            memory: "512Mi" # Augmenté par sécurité
+            cpu: "250m"
           limits:
-            memory: "1Gi"   # Plafond (si dépasse, K8s tue le pod)
-            cpu: "1000m"    # 1 coeur CPU max
+            memory: "1Gi"
+            cpu: "1000m"
 
-        # --- 3. Sondes de Santé ---
-        # Vérifie si l'API a fini de charger le modèle au démarrage (Délai de grâce)
         startupProbe:
           httpGet:
-            path: / # FastAPI a une route racine
+            path: /
             port: 5000
-          failureThreshold: 60 # Essaie 60 fois
-          periodSeconds: 10    # Toutes les 10s (Total 600s pour télécharger le modèle)
+          failureThreshold: 60
+          periodSeconds: 10
         
-        # Vérifie si l'API est toujours vivante en continu
         livenessProbe:
           httpGet:
             path: /
