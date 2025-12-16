@@ -19,3 +19,4 @@ __pycache__/
 
 # Kubernetes secrets
 k8s/secrets.yml
+config.txt
