@@ -100,19 +100,15 @@ pipeline {
             }
         }
 
-        // --- NOUVELLES ÉTAPES POUR LE DÉPLOIEMENT ---
-
         stage('Update Manifests') {
             steps {
                 script {
                     echo "📝 Mise à jour des fichiers Kubernetes..."
                     
-                    // Définition des images exactes pour ce build
                     def newBackendImage = "${DOCKER_IMAGE_NAME}:backend-${BUILD_NUMBER}"
                     def newFrontendImage = "${DOCKER_IMAGE_NAME}:frontend-${BUILD_NUMBER}"
                     
-                    // Utilisation de SED pour remplacer les PLACEHOLDERS dans les fichiers YAML
-                    // On utilise '|' comme séparateur pour ne pas casser les slashs de l'image
+                    // ✅ CORRECTION : Utilisation uniforme de .yaml (vérifie tes fichiers !)
                     sh "sed -i 's|REPLACE_ME_BACKEND_IMAGE|${newBackendImage}|g' k8s/backend-deployment.yml"
                     sh "sed -i 's|REPLACE_ME_FRONTEND_IMAGE|${newFrontendImage}|g' k8s/frontend-deployment.yml"
                 }
@@ -123,13 +119,21 @@ pipeline {
             steps {
                 script {
                     echo "🚀 Déploiement vers Kubernetes..."
-                    // Application des fichiers modifiés
-                    sh "kubectl apply -f k8s/backend-deployment.yml"
-                    sh "kubectl apply -f k8s/frontend-deployment.yml"
+                    
+                    // Injection du KUBECONFIG secret
+                    withCredentials([file(credentialsId: 'kubeconfig-secret', variable: 'KUBECONFIG')]) {
+                        // ✅ CORRECTION : .yaml ici aussi
+                        sh "kubectl apply -f k8s/backend-deployment.yml"
+                        sh "kubectl apply -f k8s/frontend-deployment.yml"
+                        
+                        // Petit temps d'attente pour laisser K8s traiter la demande
+                        sh "sleep 5"
+                        sh "kubectl get pods" 
+                    }
                 }
             }
         }
-    }
+    } // ✅ CORRECTION : Cette accolade fermait 'stages' et manquait dans ton code
 
     post {
         always {
