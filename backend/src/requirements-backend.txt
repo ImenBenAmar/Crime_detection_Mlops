@@ -29,3 +29,5 @@ datetime
 deepchecks
 anywidget
 ipywidgets
+
+evidently
