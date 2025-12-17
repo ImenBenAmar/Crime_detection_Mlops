@@ -9,7 +9,7 @@ venv/
 # Data and artifacts
 data/
 backend/src/processors/
-mlruns/
+backend/mlruns/
 
 # IDE and OS
 .vscode/
