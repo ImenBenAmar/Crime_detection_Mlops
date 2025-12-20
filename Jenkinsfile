@@ -96,14 +96,16 @@ pipeline {
             }
         }
 
-        stage('5. Continuous Training (CT)') {
-            // Se déclenche si le stage précédent a détecté un drift
-            when { expression { fileExists 'drift_detected' } }            steps {
+       stage('5. Continuous Training (CT)') {
+            // ✅ Correction ici : ajout de 'expression'
+            when { 
+                expression { fileExists 'drift_detected' } 
+            }
+            steps {
                 script {
                     echo "🚨 DRIFT DÉTECTÉ : Lancement du ré-entraînement via training.py..."
                     docker.image('python:3.9-slim').inside {
                         sh 'pip install -r backend/requirements-backend.txt'
-                        // On lance TON script d'entraînement
                         sh "export PYTHONPATH=\$PYTHONPATH:\$(pwd)/backend/src && python backend/src/trainning.py"
                     }
                 }
