@@ -20,6 +20,7 @@ __pycache__/
 #jenkins Dockerfile
 
 jenkins/
+kubeconfig_jenkins.yaml
 
 # Kubernetes secrets
 k8s/secrets.yml
