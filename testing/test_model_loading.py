@@ -1,72 +1,55 @@
-import pytest
-import pandas as pd
-from unittest.mock import patch, MagicMock
-import sys
 import os
+import sys
+from dotenv import load_dotenv
+import mlflow
 
-# Configuration des chemins
+# 1. Charger les variables d'environnement (Tokens)
+load_dotenv()
+
+# 2. Configurer les chemins pour importer ton code
 current_dir = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.abspath(os.path.join(current_dir, '../backend/src')))
 
-from api import load_best_model
+# On importe les VRAIES fonctions de ton API
+from api import setup_mlflow, download_model_from_registry, REGISTERED_MODEL_NAME
 
-@patch('api.mlflow')
-@patch('api.pickle')
-@patch('builtins.open', new_callable=MagicMock)
-def test_load_best_model_logic(mock_open, mock_pickle, mock_mlflow):
-    print("\n\n" + "="*60)
-    print("🎬 DÉBUT DU SCÉNARIO DE TEST")
+def test_actual_dagshub_registry():
+    print("\n" + "="*60)
+    print(f"📡 CONNEXION RÉELLE AU REGISTRY DAGSHUB")
     print("="*60)
 
-    # --- 1. MISE EN SCÈNE (MOCKS) ---
-    print("🤖 1. Simulation : Création de 3 faux modèles...")
+    # A. Initialisation de la connexion
+    print(f"🔗 Tentative de connexion à : {os.getenv('DAGSHUB_REPO_NAME')}...")
+    setup_mlflow()
     
-    # On simule que l'expérience existe
-    mock_experiment = MagicMock()
-    mock_experiment.experiment_id = "EXP_001"
-    mock_mlflow.get_experiment_by_name.return_value = mock_experiment
+    print(f"📍 Tracking URI actuel : {mlflow.get_tracking_uri()}")
 
-    # On crée notre faux tableau de résultats (Le Run B est le meilleur)
-    fake_runs = pd.DataFrame({
-        'run_id': ['RUN_B_WINNER', 'RUN_C_AVG', 'RUN_A_BAD'],
-        'metrics.f1_weighted': [0.92, 0.85, 0.50],
-        'tags.model_name': ['XGBoost', 'RandomForest', 'LogisticRegression'],
-        'tags.stage': ['Tuned', 'Baseline', 'Baseline']
-    })
+    # B. Appel de la fonction de téléchargement réelle
+    print(f"\n🔍 Recherche du modèle '{REGISTERED_MODEL_NAME}' dans le Cloud...")
     
-    # On dit à MLflow (le faux) : "Quand on te demande les runs, donne cette liste"
-    mock_mlflow.search_runs.return_value = fake_runs
-    print(f"📊 Données simulées envoyées à l'API :\n{fake_runs[['run_id', 'metrics.f1_weighted', 'tags.model_name']]}")
+    try:
+        # On appelle ta fonction qui interroge DagsHub
+        model, model_name, processors_path = download_model_from_registry()
 
-    # On simule le contenu du fichier modèle
-    fake_model_content = "Je suis l'objet modèle XGBoost"
-    mock_pickle.load.return_value = fake_model_content
+        if model:
+            print("\n✨ --- RÉSULTATS CLOUD RÉELS ---")
+            print(f"✅ MODÈLE TROUVÉ  : {REGISTERED_MODEL_NAME}")
+            print(f"✅ VERSION DÉTECTÉE : {model_name.split('_v')[-1]}")
+            print(f"✅ NOM COMPLET     : {model_name}")
+            print(f"📂 CHEMIN LOCAL DES ARTEFACTS : {processors_path}")
+            
+            # Vérification physique des fichiers téléchargés
+            files = os.listdir(processors_path)
+            print(f"📦 FICHIERS RÉCUPÉRÉS : {files}")
+            
+            print("\n🏆 SUCCÈS : Ton API est parfaitement connectée à DagsHub !")
+        else:
+            print("\n⚠️ CONNEXION OK mais AUCUN MODÈLE trouvé dans le Registry.")
+            print(f"Vérifiez que le nom '{REGISTERED_MODEL_NAME}' est bien écrit sur DagsHub.")
 
-    # --- 2. ACTION ---
-    print("\n🏃 2. Action : L'API appelle la fonction 'load_best_model()'...")
-    model, name = load_best_model()
+    except Exception as e:
+        print(f"\n❌ ERREUR DE CONNEXION : {str(e)}")
+        print("Vérifiez votre DAGSHUB_TOKEN et votre connexion internet.")
 
-    # --- 3. VÉRIFICATION ---
-    print("\n🕵️ 3. Vérification : Qui a été choisi ?")
-    
-    # Vérification du tri
-    args, kwargs = mock_mlflow.search_runs.call_args
-    print(f"   👉 Critère de tri utilisé par l'API : {kwargs['order_by']}")
-
-    # Vérification du téléchargement
-    # On récupère les arguments avec lesquels download_artifacts a été appelé
-    call_args = mock_mlflow.artifacts.download_artifacts.call_args
-    downloaded_run_id = call_args.kwargs['run_id']
-    downloaded_file = call_args.kwargs['artifact_path']
-
-    print(f"   👉 L'API a téléchargé le Run ID : '{downloaded_run_id}'")
-    print(f"   👉 L'API a cherché le fichier   : '{downloaded_file}'")
-
-    # TEST FINAL
-    if downloaded_run_id == 'RUN_B_WINNER':
-        print("\n✅ SUCCÈS : L'API a bien pris le modèle avec le meilleur score (0.92) !")
-    else:
-        print(f"\n❌ ÉCHEC : L'API a pris {downloaded_run_id} au lieu de RUN_B_WINNER.")
-        pytest.fail("Mauvais modèle sélectionné")
-
-    print("="*60 + "\n")
+if __name__ == "__main__":
+    test_actual_dagshub_registry()
