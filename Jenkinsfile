@@ -20,7 +20,7 @@ pipeline {
         DAGSHUB_REPO_NAME = 'MLOPS_Project'
         MLFLOW_TRACKING_URI = 'https://dagshub.com/YomnaJL/MLOPS_Project.mlflow'
         
-        // Variable pour simplifier l'activation du venv dans les scripts
+        // Aide pour les scripts
         ACTIVATE_VENV = ". venv/bin/activate"
         PYTHON_PATH_CMD = "export PYTHONPATH=\$PYTHONPATH:\$(pwd)/backend/src"
     }
@@ -41,15 +41,18 @@ pipeline {
                 script {
                     echo "🧪 Création de l'environnement virtuel et tests..."
                     docker.image('python:3.9-slim').inside {
-                        sh """
-                        python -m venv venv
-                        ${ACTIVATE_VENV}
-                        pip install --upgrade pip
-                        pip install -r backend/requirements-backend.txt
-                        pip install pytest pytest-mock flake8
-                        ${PYTHON_PATH_CMD}
-                        pytest testing/ --junitxml=test-results.xml
-                        """
+                        // LE FIX : On définit HOME sur le dossier courant pour que pip puisse écrire
+                        withEnv(['HOME=.']) {
+                            sh """
+                            python -m venv venv
+                            ${ACTIVATE_VENV}
+                            pip install --upgrade pip
+                            pip install -r backend/requirements-backend.txt
+                            pip install pytest pytest-mock flake8
+                            ${PYTHON_PATH_CMD}
+                            pytest testing/ --junitxml=test-results.xml
+                            """
+                        }
                     }
                 }
             }
@@ -67,17 +70,19 @@ pipeline {
         stage('3. Pull Data (DVC)') {
             steps {
                 script {
-                    echo "📥 Pull des données avec DVC (via venv)..."
+                    echo "📥 Pull des données via DVC..."
                     withCredentials([usernamePassword(credentialsId: 'dagshub-credentials', usernameVariable: 'DW_USER', passwordVariable: 'DW_PASS')]) {
                         docker.image('python:3.9-slim').inside {
-                            sh """
-                            ${ACTIVATE_VENV}
-                            pip install dvc dvc-s3
-                            dvc remote modify origin --local auth basic
-                            dvc remote modify origin --local user $DW_USER
-                            dvc remote modify origin --local password $DW_PASS
-                            dvc pull
-                            """
+                            withEnv(['HOME=.']) {
+                                sh """
+                                ${ACTIVATE_VENV}
+                                pip install dvc dvc-s3
+                                dvc remote modify origin --local auth basic
+                                dvc remote modify origin --local user $DW_USER
+                                dvc remote modify origin --local password $DW_PASS
+                                dvc pull
+                                """
+                            }
                         }
                     }
                 }
@@ -89,12 +94,14 @@ pipeline {
                 script {
                     echo "🔍 Analyse du Data Drift..."
                     docker.image('python:3.9-slim').inside {
-                        sh """
-                        ${ACTIVATE_VENV}
-                        pip install evidently
-                        ${PYTHON_PATH_CMD}
-                        python monitoring/check_drift.py || touch drift_detected
-                        """
+                        withEnv(['HOME=.']) {
+                            sh """
+                            ${ACTIVATE_VENV}
+                            pip install evidently
+                            ${PYTHON_PATH_CMD}
+                            python monitoring/check_drift.py || touch drift_detected
+                            """
+                        }
                     }
                 }
             }
@@ -113,39 +120,37 @@ pipeline {
                 script {
                     echo "🚨 DRIFT DÉTECTÉ : Ré-entraînement..."
                     docker.image('python:3.9-slim').inside {
-                        sh """
-                        ${ACTIVATE_VENV}
-                        ${PYTHON_PATH_CMD}
-                        python backend/src/trainning.py
-                        """
+                        withEnv(['HOME=.']) {
+                            sh """
+                            ${ACTIVATE_VENV}
+                            ${PYTHON_PATH_CMD}
+                            python backend/src/trainning.py
+                            """
+                        }
                     }
                 }
             }
         }
 
-        stage('6. Docker Build & Push') {
+        stage('6. Docker Build & Push (Parallel)') {
             steps {
                 script {
-                    // On se connecte une seule fois avant de lancer les builds parallèles
+                    // Login Docker Hub
                     withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
                         sh "echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin"
                     }
 
-                    // Lancement des builds en parallèle
+                    // Exécution en parallèle
                     parallel(
-                        "Build Backend": {
-                            echo "🏗️ Building & Pushing Backend..."
+                        "Backend": {
                             sh """
                             docker build -t ${DOCKER_IMAGE_NAME}:backend-${GIT_COMMIT_HASH} -t ${DOCKER_IMAGE_NAME}:backend-latest ./backend
-                            docker push ${DOCKER_IMAGE_NAME}:backend-${GIT_COMMIT_HASH}
                             docker push ${DOCKER_IMAGE_NAME}:backend-latest
                             """
                         },
-                        "Build Frontend": {
-                            echo "🏗️ Building & Pushing Frontend..."
+                        "Frontend": {
                             sh """
                             docker build -t ${DOCKER_IMAGE_NAME}:frontend-${GIT_COMMIT_HASH} -t ${DOCKER_IMAGE_NAME}:frontend-latest ./frontend
-                            docker push ${DOCKER_IMAGE_NAME}:frontend-${GIT_COMMIT_HASH}
                             docker push ${DOCKER_IMAGE_NAME}:frontend-latest
                             """
                         }
@@ -179,12 +184,8 @@ pipeline {
     
     post {
         always {
-            // On nettoie le venv et les fichiers temporaires pour garder le serveur propre
             sh "rm -rf venv drift_detected || true"
             sh "docker logout || true"
-        }
-        success {
-            echo "✨ Pipeline MLOps terminé avec succès (Mode Virtualenv) !"
         }
     }
 }
