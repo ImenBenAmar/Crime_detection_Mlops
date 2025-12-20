@@ -118,26 +118,30 @@ pipeline {
 
     /* ===================================================== */
     stage('5. Conditional Retraining') {
-      when {
-        expression { fileExists('monitoring/drift_detected') }
-      }
-      steps {
-        script {
-          docker.image('python:3.9-slim').inside("-u root") {
-            withEnv(['HOME=.']) {
-              sh """
-                ${ACTIVATE_VENV}
-
-                export MLFLOW_TRACKING_USERNAME=${DAGSHUB_AUTH_USR}
-                export MLFLOW_TRACKING_PASSWORD=${DAGSHUB_AUTH_PSW}
-
-                ${PYTHON_PATH_CMD}
-                python backend/src/trainning.py
-              """
-            }
-          }
+        when {
+            expression { fileExists('monitoring/drift_detected') }
         }
-      }
+        steps {
+            script {
+            docker.image('python:3.9-slim').inside("-u root") {
+                withEnv(['HOME=.']) {
+
+                sh """
+                    apt-get update && apt-get install -y libgomp1
+                    ${ACTIVATE_VENV}
+                    ${PYTHON_PATH_CMD}
+                """
+
+                withEnv([
+                    "MLFLOW_TRACKING_USERNAME=${DAGSHUB_AUTH_USR}",
+                    "MLFLOW_TRACKING_PASSWORD=${DAGSHUB_AUTH_PSW}"
+                ]) {
+                    sh "python backend/src/trainning.py"
+                }
+                }
+            }
+            }
+        }
     }
 
     /* ===================================================== */
