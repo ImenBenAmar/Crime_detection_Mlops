@@ -10,15 +10,16 @@ pipeline {
 
     environment {
         DOCKER_IMAGE_NAME = 'imen835/mlops-crime'
+        // On définit le credential une seule fois ici
+        DAGSHUB_AUTH = credentials('daghub-credentials')
         DOCKERHUB_CREDS = credentials('docker-hub-credentials')
         
-        DAGSHUB_USERNAME = 'YomnaJL'
+        DAGSHUB_USERNAME  = 'YomnaJL'
         DAGSHUB_REPO_NAME = 'MLOPS_Project'
         MLFLOW_TRACKING_URI = "https://dagshub.com/${DAGSHUB_USERNAME}/${DAGSHUB_REPO_NAME}.mlflow"
         
-        ACTIVATE_VENV = ". venv/bin/activate"
-        PYTHON_PATH_CMD = "export PYTHONPATH=\$PYTHONPATH:\$(pwd)/backend/src"
-        // Supprime les warnings Git et force le mode sans écran
+        ACTIVATE_VENV     = ". venv/bin/activate"
+        PYTHON_PATH_CMD   = "export PYTHONPATH=\$PYTHONPATH:\$(pwd)/backend/src"
         GIT_PYTHON_REFRESH = "quiet"
     }
 
@@ -40,32 +41,33 @@ pipeline {
         stage('2. Pull Data (DVC)') {
             steps {
                 script {
-                    echo "📥 Récupération des données depuis DagsHub..."
+                    echo "📥 Pulling data via DVC (CML image)..."
                     def dagshubUrl = "https://dagshub.com/${DAGSHUB_USERNAME}/${DAGSHUB_REPO_NAME}.dvc"
                     
-                    withCredentials([usernamePassword(credentialsId: 'daghub-credentials', usernameVariable: 'DW_USER', passwordVariable: 'DW_PASS')]) {
-                        docker.image('iterativeai/cml:latest').inside("-u root") {
-                            withEnv(['HOME=.']) {
-                                sh """
-                                dvc remote add -d -f origin ${dagshubUrl}
-                                dvc remote modify origin --local auth basic
-                                dvc remote modify origin --local user \$DW_USER
-                                dvc remote modify origin --local password \$DW_PASS
-                                dvc pull -v
-                                """
-                            }
+                    // Utilisation de DAGSHUB_AUTH_USR et DAGSHUB_AUTH_PSW
+                    docker.image('iterativeai/cml:latest').inside("-u root") {
+                        withEnv(['HOME=.']) {
+                            sh """
+                            dvc remote add -d -f origin ${dagshubUrl}
+                            dvc remote modify origin --local auth basic
+                            dvc remote modify origin --local user ${DAGSHUB_AUTH_USR}
+                            dvc remote modify origin --local password ${DAGSHUB_AUTH_PSW}
+                            dvc pull -v
+                            """
                         }
                     }
                 }
             }
         }
 
-        stage('3. CI: Quality & Tests') {
+        stage('3. ML Pipeline (Tests, Monitoring, CT)') {
             steps {
                 script {
-                    echo "🧪 Setup Environnement & Tests Unitaires..."
                     docker.image('python:3.9-slim').inside("-u root") {
                         withEnv(['HOME=.']) {
+                            
+                            // --- ÉTAPE A: INSTALLATION UNIQUE ---
+                            echo "🛠️ Installation des dépendances..."
                             sh """
                             apt-get update && apt-get install -y libgomp1
                             python -m venv venv
@@ -73,9 +75,40 @@ pipeline {
                             pip install --upgrade pip
                             pip install --no-cache-dir -r backend/src/requirements-backend.txt
                             pip install --no-cache-dir pytest pytest-mock flake8 evidently
+                            """
+
+                            // --- ÉTAPE B: TESTS UNITAIRES ---
+                            echo "🧪 Exécution des tests..."
+                            sh """
+                            ${ACTIVATE_VENV}
                             ${PYTHON_PATH_CMD}
                             pytest testing/ --junitxml=test-results.xml
                             """
+
+                            // --- ÉTAPE C: MONITORING DE DRIFT ---
+                            echo "🔍 Analyse du Drift..."
+                            sh """
+                            ${ACTIVATE_VENV}
+                            ${PYTHON_PATH_CMD}
+                            # On utilise le PSW (le token) pour l'auth MLflow
+                            export MLFLOW_TRACKING_USERNAME=${DAGSHUB_AUTH_USR}
+                            export MLFLOW_TRACKING_PASSWORD=${DAGSHUB_AUTH_PSW}
+                            python monitoring/check_drift.py || touch monitoring/drift_detected
+                            """
+
+                            // --- ÉTAPE D: RETRAINING ---
+                            if (fileExists('monitoring/drift_detected')) {
+                                echo "🚨 DRIFT DÉTECTÉ ! Lancement du ré-entraînement..."
+                                sh """
+                                ${ACTIVATE_VENV}
+                                ${PYTHON_PATH_CMD}
+                                export MLFLOW_TRACKING_USERNAME=${DAGSHUB_AUTH_USR}
+                                export MLFLOW_TRACKING_PASSWORD=${DAGSHUB_AUTH_PSW}
+                                python backend/src/trainning.py
+                                """
+                            } else {
+                                echo "✅ Pas de drift. Retraining ignoré."
+                            }
                         }
                     }
                 }
@@ -84,68 +117,15 @@ pipeline {
                 always {
                     script {
                         if (fileExists('test-results.xml')) { junit 'test-results.xml' }
-                    }
-                }
-            }
-        }
-
-        stage('4. Monitoring & Drift Detection') {
-            steps {
-                script {
-                    echo "🔍 Analyse du Data Drift (Evidently)..."
-                    docker.image('python:3.9-slim').inside("-u root") {
-                        withEnv(['HOME=.']) {
-                            sh """
-                            apt-get update && apt-get install -y libgomp1
-                            ${ACTIVATE_VENV}
-                            # Ré-installation rapide si le module est manquant
-                            pip install evidently
-                            ${PYTHON_PATH_CMD}
-                            python monitoring/check_drift.py || touch drift_detected
-                            """
-                        }
-                    }
-                }
-            }
-            post {
-                always {
-                    script {
-                        if (fileExists('drift_report.html')) {
-                            archiveArtifacts artifacts: 'drift_report.html'
+                        if (fileExists('monitoring/monitoring_drift_report.html')) { 
+                            archiveArtifacts artifacts: 'monitoring/monitoring_drift_report.html' 
                         }
                     }
                 }
             }
         }
 
-        stage('5. Continuous Training (CT)') {
-            when { expression { fileExists 'drift_detected' } }
-            steps {
-                script {
-                    echo "🚨 DRIFT DÉTECTÉ : Lancement du ré-entraînement..."
-                    withCredentials([string(credentialsId: 'daghub-credentials', variable: 'TOKEN')]) {
-                        docker.image('python:3.9-slim').inside("-u root") {
-                            // Injection des credentials pour MLflow (Évite le popup navigateur)
-                            withEnv([
-                                "HOME=.", 
-                                "DAGSHUB_TOKEN=${TOKEN}",
-                                "MLFLOW_TRACKING_USERNAME=${DAGSHUB_USERNAME}",
-                                "MLFLOW_TRACKING_PASSWORD=${TOKEN}"
-                            ]) {
-                                sh """
-                                apt-get update && apt-get install -y libgomp1
-                                ${ACTIVATE_VENV}
-                                ${PYTHON_PATH_CMD}
-                                python backend/src/trainning.py
-                                """
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        stage('6. Docker Build & Push (Parallel)') {
+        stage('4. Docker Build & Push (Parallel)') {
             steps {
                 script {
                     parallel(
@@ -162,19 +142,16 @@ pipeline {
             }
         }
 
-        stage('7. Kubernetes Deploy') {
+        stage('5. Kubernetes Deploy') {
             steps {
                 script {
-                    echo "🚀 Mise à jour et déploiement Kubernetes..."
-                    def backendImg = "${DOCKER_IMAGE_NAME}:backend-latest"
-                    def frontendImg = "${DOCKER_IMAGE_NAME}:frontend-latest"
-                    
-                    sh "sed -i 's|REPLACE_ME_BACKEND_IMAGE|${backendImg}|g' k8s/backend-deployment.yml"
-                    sh "sed -i 's|REPLACE_ME_FRONTEND_IMAGE|${frontendImg}|g' k8s/frontend-deployment.yml"
+                    echo "🚀 Déploiement K8s..."
+                    sh "sed -i 's|REPLACE_ME_BACKEND_IMAGE|${DOCKER_IMAGE_NAME}:backend-latest|g' k8s/backend-deployment.yml"
+                    sh "sed -i 's|REPLACE_ME_FRONTEND_IMAGE|${DOCKER_IMAGE_NAME}:frontend-latest|g' k8s/frontend-deployment.yml"
                     
                     withCredentials([file(credentialsId: 'kubeconfig-secret', variable: 'KUBECONFIG')]) {
                         sh """
-                        kubectl --kubeconfig=\$KUBECONFIG apply -f k8s/mlops-config.yml
+                        kubectl --kubeconfig=\$KUBECONFIG apply -f k8s/config-env.yml
                         kubectl --kubeconfig=\$KUBECONFIG apply -f k8s/backend-deployment.yml
                         kubectl --kubeconfig=\$KUBECONFIG apply -f k8s/frontend-deployment.yml
                         kubectl --kubeconfig=\$KUBECONFIG rollout restart deployment/backend-deployment
@@ -187,11 +164,8 @@ pipeline {
     
     post {
         always {
-            sh "rm -rf venv drift_detected || true"
+            sh "rm -rf venv monitoring/drift_detected || true"
             sh "docker logout || true"
-        }
-        success {
-            echo "✨ Pipeline MLOps exécuté avec succès !"
         }
     }
 }
