@@ -28,7 +28,6 @@ pipeline {
                 script {
                     env.GIT_COMMIT_HASH = sh(returnStdout: true, script: "git rev-parse --short HEAD").trim()
                     
-                    // ✅ Docker Login validé au démarrage
                     withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER')]) {
                         sh "echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin"
                     }
@@ -40,9 +39,11 @@ pipeline {
             steps {
                 script {
                     echo "🧪 Setup Environment & Unit Tests..."
-                    docker.image('python:3.9-slim').inside {
+                    // Utilisation de root pour installer libgomp1
+                    docker.image('python:3.9-slim').inside("-u root") {
                         withEnv(['HOME=.']) {
                             sh """
+                            apt-get update && apt-get install -y libgomp1
                             python -m venv venv
                             ${ACTIVATE_VENV}
                             pip install --upgrade pip
@@ -63,30 +64,21 @@ pipeline {
                 }
             }
         }
+
         stage('3. Pull Data (DVC) - OPTIMIZED') {
             steps {
                 script {
                     echo "📥 Configuration et Pull des données DVC..."
-                    // On définit l'URL ici : c'est ta source de vérité
                     def dagshubUrl = "https://dagshub.com/${DAGSHUB_USERNAME}/${DAGSHUB_REPO_NAME}.dvc"
                     
                     withCredentials([usernamePassword(credentialsId: 'daghub-credentials', usernameVariable: 'DW_USER', passwordVariable: 'DW_PASS')]) {
                         docker.image('iterativeai/cml:latest').inside("-u root") {
                             withEnv(['HOME=.']) {
                                 sh """
-                                # 1. On force l'ajout/mise à jour du remote 'origin' avec la bonne URL
-                                # Le -f (force) permet d'écraser l'URL si elle existe déjà
                                 dvc remote add -d -f origin ${dagshubUrl}
-
-                                # 2. On configure l'authentification en LOCAL (pour ne pas polluer le repo)
                                 dvc remote modify origin --local auth basic
                                 dvc remote modify origin --local user \$DW_USER
                                 dvc remote modify origin --local password \$DW_PASS
-
-                                # 3. Vérification visuelle dans les logs Jenkins
-                                dvc remote list
-
-                                # 4. Téléchargement des données (Mode verbeux pour voir la progression)
                                 dvc pull -v
                                 """
                             }
@@ -100,9 +92,11 @@ pipeline {
             steps {
                 script {
                     echo "🔍 Analyse du Data Drift..."
-                    docker.image('python:3.9-slim').inside {
+                    docker.image('python:3.9-slim').inside("-u root") {
                         withEnv(['HOME=.']) {
                             sh """
+                            # Ré-installation de la lib système car le conteneur est fresh
+                            apt-get update && apt-get install -y libgomp1
                             ${ACTIVATE_VENV}
                             ${PYTHON_PATH_CMD}
                             python monitoring/check_drift.py || touch drift_detected
@@ -123,9 +117,10 @@ pipeline {
             steps {
                 script {
                     echo "🚨 DRIFT DÉTECTÉ : Ré-entraînement..."
-                    docker.image('python:3.9-slim').inside {
+                    docker.image('python:3.9-slim').inside("-u root") {
                         withEnv(['HOME=.']) {
                             sh """
+                            apt-get update && apt-get install -y libgomp1
                             ${ACTIVATE_VENV}
                             ${PYTHON_PATH_CMD}
                             python backend/src/trainning.py
