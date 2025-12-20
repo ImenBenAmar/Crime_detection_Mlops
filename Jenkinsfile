@@ -10,14 +10,16 @@ pipeline {
 
     environment {
         DOCKER_IMAGE_NAME = 'imen835/mlops-crime'
-        DAGSHUB_TOKEN = credentials('daghub-credentials') 
         DOCKERHUB_CREDS = credentials('docker-hub-credentials')
+        
         DAGSHUB_USERNAME = 'YomnaJL'
         DAGSHUB_REPO_NAME = 'MLOPS_Project'
         MLFLOW_TRACKING_URI = "https://dagshub.com/${DAGSHUB_USERNAME}/${DAGSHUB_REPO_NAME}.mlflow"
         
         ACTIVATE_VENV = ". venv/bin/activate"
         PYTHON_PATH_CMD = "export PYTHONPATH=\$PYTHONPATH:\$(pwd)/backend/src"
+        // Supprime les warnings Git et force le mode sans écran
+        GIT_PYTHON_REFRESH = "quiet"
     }
 
     stages {
@@ -35,11 +37,33 @@ pipeline {
             }
         }
 
-        stage('2. CI: Quality & Tests') {
+        stage('2. Pull Data (DVC)') {
             steps {
                 script {
-                    echo "🧪 Setup Environment & Unit Tests..."
-                    // Utilisation de root pour installer libgomp1
+                    echo "📥 Récupération des données depuis DagsHub..."
+                    def dagshubUrl = "https://dagshub.com/${DAGSHUB_USERNAME}/${DAGSHUB_REPO_NAME}.dvc"
+                    
+                    withCredentials([usernamePassword(credentialsId: 'daghub-credentials', usernameVariable: 'DW_USER', passwordVariable: 'DW_PASS')]) {
+                        docker.image('iterativeai/cml:latest').inside("-u root") {
+                            withEnv(['HOME=.']) {
+                                sh """
+                                dvc remote add -d -f origin ${dagshubUrl}
+                                dvc remote modify origin --local auth basic
+                                dvc remote modify origin --local user \$DW_USER
+                                dvc remote modify origin --local password \$DW_PASS
+                                dvc pull -v
+                                """
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('3. CI: Quality & Tests') {
+            steps {
+                script {
+                    echo "🧪 Setup Environnement & Tests Unitaires..."
                     docker.image('python:3.9-slim').inside("-u root") {
                         withEnv(['HOME=.']) {
                             sh """
@@ -65,39 +89,17 @@ pipeline {
             }
         }
 
-        stage('3. Pull Data (DVC) - OPTIMIZED') {
-            steps {
-                script {
-                    echo "📥 Configuration et Pull des données DVC..."
-                    def dagshubUrl = "https://dagshub.com/${DAGSHUB_USERNAME}/${DAGSHUB_REPO_NAME}.dvc"
-                    
-                    withCredentials([usernamePassword(credentialsId: 'daghub-credentials', usernameVariable: 'DW_USER', passwordVariable: 'DW_PASS')]) {
-                        docker.image('iterativeai/cml:latest').inside("-u root") {
-                            withEnv(['HOME=.']) {
-                                sh """
-                                dvc remote add -d -f origin ${dagshubUrl}
-                                dvc remote modify origin --local auth basic
-                                dvc remote modify origin --local user \$DW_USER
-                                dvc remote modify origin --local password \$DW_PASS
-                                dvc pull -v
-                                """
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
         stage('4. Monitoring & Drift Detection') {
             steps {
                 script {
-                    echo "🔍 Analyse du Data Drift..."
+                    echo "🔍 Analyse du Data Drift (Evidently)..."
                     docker.image('python:3.9-slim').inside("-u root") {
                         withEnv(['HOME=.']) {
                             sh """
-                            # Ré-installation de la lib système car le conteneur est fresh
                             apt-get update && apt-get install -y libgomp1
                             ${ACTIVATE_VENV}
+                            # Ré-installation rapide si le module est manquant
+                            pip install evidently
                             ${PYTHON_PATH_CMD}
                             python monitoring/check_drift.py || touch drift_detected
                             """
@@ -107,7 +109,11 @@ pipeline {
             }
             post {
                 always {
-                    archiveArtifacts artifacts: 'drift_report.html', allowEmptyArchive: true
+                    script {
+                        if (fileExists('drift_report.html')) {
+                            archiveArtifacts artifacts: 'drift_report.html'
+                        }
+                    }
                 }
             }
         }
@@ -116,18 +122,20 @@ pipeline {
             when { expression { fileExists 'drift_detected' } }
             steps {
                 script {
-                    echo "🚨 DRIFT DÉTECTÉ : Ré-entraînement..."
-                    // On utilise withCredentials pour récupérer le token de Jenkins
+                    echo "🚨 DRIFT DÉTECTÉ : Lancement du ré-entraînement..."
                     withCredentials([string(credentialsId: 'daghub-credentials', variable: 'TOKEN')]) {
                         docker.image('python:3.9-slim').inside("-u root") {
-                            withEnv(["HOME=.", "DAGSHUB_TOKEN=${TOKEN}"]) {
+                            // Injection des credentials pour MLflow (Évite le popup navigateur)
+                            withEnv([
+                                "HOME=.", 
+                                "DAGSHUB_TOKEN=${TOKEN}",
+                                "MLFLOW_TRACKING_USERNAME=${DAGSHUB_USERNAME}",
+                                "MLFLOW_TRACKING_PASSWORD=${TOKEN}"
+                            ]) {
                                 sh """
                                 apt-get update && apt-get install -y libgomp1
                                 ${ACTIVATE_VENV}
                                 ${PYTHON_PATH_CMD}
-                                # On passe aussi les variables pour être sûr
-                                export DAGSHUB_TOKEN=${TOKEN}
-                                export GIT_PYTHON_REFRESH=quiet
                                 python backend/src/trainning.py
                                 """
                             }
@@ -157,12 +165,12 @@ pipeline {
         stage('7. Kubernetes Deploy') {
             steps {
                 script {
-                    echo "🚀 Déploiement K8s (.yml)..."
-                    def newBackend = "${DOCKER_IMAGE_NAME}:backend-latest"
-                    def newFrontend = "${DOCKER_IMAGE_NAME}:frontend-latest"
+                    echo "🚀 Mise à jour et déploiement Kubernetes..."
+                    def backendImg = "${DOCKER_IMAGE_NAME}:backend-latest"
+                    def frontendImg = "${DOCKER_IMAGE_NAME}:frontend-latest"
                     
-                    sh "sed -i 's|REPLACE_ME_BACKEND_IMAGE|${newBackend}|g' k8s/backend-deployment.yml"
-                    sh "sed -i 's|REPLACE_ME_FRONTEND_IMAGE|${newFrontend}|g' k8s/frontend-deployment.yml"
+                    sh "sed -i 's|REPLACE_ME_BACKEND_IMAGE|${backendImg}|g' k8s/backend-deployment.yml"
+                    sh "sed -i 's|REPLACE_ME_FRONTEND_IMAGE|${frontendImg}|g' k8s/frontend-deployment.yml"
                     
                     withCredentials([file(credentialsId: 'kubeconfig-secret', variable: 'KUBECONFIG')]) {
                         sh """
@@ -181,6 +189,9 @@ pipeline {
         always {
             sh "rm -rf venv drift_detected || true"
             sh "docker logout || true"
+        }
+        success {
+            echo "✨ Pipeline MLOps exécuté avec succès !"
         }
     }
 }
