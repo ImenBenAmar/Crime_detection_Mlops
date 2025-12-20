@@ -47,7 +47,7 @@ pipeline {
                             python -m venv venv
                             ${ACTIVATE_VENV}
                             pip install --upgrade pip
-                            pip install -r backend/requirements-backend.txt
+                            pip install -r backend/src/requirements-backend.txt
                             pip install pytest pytest-mock flake8
                             ${PYTHON_PATH_CMD}
                             pytest testing/ --junitxml=test-results.xml
