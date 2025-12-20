@@ -112,19 +112,25 @@ pipeline {
             }
         }
 
-       stage('5. Continuous Training (CT)') {
+        stage('5. Continuous Training (CT)') {
             when { expression { fileExists 'drift_detected' } }
             steps {
                 script {
                     echo "🚨 DRIFT DÉTECTÉ : Ré-entraînement..."
-                    docker.image('python:3.9-slim').inside("-u root") {
-                        withEnv(['HOME=.']) {
-                            sh """
-                            apt-get update && apt-get install -y libgomp1
-                            ${ACTIVATE_VENV}
-                            ${PYTHON_PATH_CMD}
-                            python backend/src/trainning.py
-                            """
+                    // On utilise withCredentials pour récupérer le token de Jenkins
+                    withCredentials([string(credentialsId: 'daghub-credentials', variable: 'TOKEN')]) {
+                        docker.image('python:3.9-slim').inside("-u root") {
+                            withEnv(["HOME=.", "DAGSHUB_TOKEN=${TOKEN}"]) {
+                                sh """
+                                apt-get update && apt-get install -y libgomp1
+                                ${ACTIVATE_VENV}
+                                ${PYTHON_PATH_CMD}
+                                # On passe aussi les variables pour être sûr
+                                export DAGSHUB_TOKEN=${TOKEN}
+                                export GIT_PYTHON_REFRESH=quiet
+                                python backend/src/trainning.py
+                                """
+                            }
                         }
                     }
                 }

@@ -29,11 +29,29 @@ DAGSHUB_REPO_OWNER = os.getenv("DAGSHUB_USERNAME", "YomnaJL")
 DAGSHUB_REPO_NAME = os.getenv("DAGSHUB_REPO_NAME", "MLOPS_Project")
 
 def setup_mlflow():
-    try:
-        dagshub.init(repo_owner=DAGSHUB_REPO_OWNER, repo_name=DAGSHUB_REPO_NAME, mlflow=True)
-        print(f"✅ Connecté à DagsHub MLflow.")
-    except Exception as e:
-        print(f"⚠️ Erreur init DagsHub: {e}. Utilisation de MLflow local ou env vars.")
+    # Récupération des credentials via les variables d'environnement (Jenkins)
+    token = os.getenv("DAGSHUB_TOKEN")
+    username = os.getenv("DAGSHUB_USERNAME", "YomnaJL")
+    repo_name = os.getenv("DAGSHUB_REPO_NAME", "MLOPS_Project")
+    repo_owner = os.getenv("DAGSHUB_REPO_OWNER", username)
+
+    if token:
+        # Configuration MANUELLE de MLflow pour éviter l'OAuth (Navigateur)
+        os.environ['MLFLOW_TRACKING_USERNAME'] = username
+        os.environ['MLFLOW_TRACKING_PASSWORD'] = token
+        
+        tracking_uri = f"https://dagshub.com/{repo_owner}/{repo_name}.mlflow"
+        mlflow.set_tracking_uri(tracking_uri)
+        
+        print(f"✅ MLflow configuré en mode automatique (Headless)")
+        print(f"📡 URI: {tracking_uri}")
+    else:
+        # Fallback pour le dev local si pas de token
+        try:
+            dagshub.init(repo_owner=repo_owner, repo_name=repo_name, mlflow=True)
+            print(f"✅ Connecté à DagsHub via dagshub.init")
+        except Exception as e:
+            print(f"⚠️ Erreur init DagsHub: {e}")
 
 def get_best_run_config():
     """
