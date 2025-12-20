@@ -98,8 +98,7 @@ pipeline {
 
         stage('5. Continuous Training (CT)') {
             // Se déclenche si le stage précédent a détecté un drift
-            when { fileExists 'drift_detected' }
-            steps {
+            when { expression { fileExists 'drift_detected' } }            steps {
                 script {
                     echo "🚨 DRIFT DÉTECTÉ : Lancement du ré-entraînement via training.py..."
                     docker.image('python:3.9-slim').inside {
