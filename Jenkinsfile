@@ -71,7 +71,7 @@ pipeline {
             steps {
                 script {
                     echo "📥 Pull des données via DVC..."
-                    withCredentials([usernamePassword(credentialsId: 'dagshub-credentials', usernameVariable: 'DW_USER', passwordVariable: 'DW_PASS')]) {
+                    withCredentials([usernamePassword(credentialsId: 'daghub-credentials', usernameVariable: 'DW_USER', passwordVariable: 'DW_PASS')]) {
                         docker.image('python:3.9-slim').inside {
                             withEnv(['HOME=.']) {
                                 sh """
