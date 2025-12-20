@@ -66,22 +66,31 @@ pipeline {
         stage('3. Pull Data (DVC) - OPTIMIZED') {
             steps {
                 script {
-                    echo "📥 Configuration et Pull des données DVC..."
+                    echo "📥 Nettoyage et Configuration DVC..."
+                    // On définit l'URL ici pour plus de clarté
+                    def dagshubUrl = "https://dagshub.com/${DAGSHUB_USERNAME}/${DAGSHUB_REPO_NAME}.dvc"
+                    
                     withCredentials([usernamePassword(credentialsId: 'daghub-credentials', usernameVariable: 'DW_USER', passwordVariable: 'DW_PASS')]) {
                         docker.image('iterativeai/cml:latest').inside("-u root") {
                             withEnv(['HOME=.']) {
                                 sh """
-                                # 1. On force l'ajout du remote avec l'URL de TON projet DagsHub
-                                # On utilise -d pour le mettre par défaut et -f pour forcer s'il existe déjà
-                                dvc remote add -d -f origin https://dagshub.com/${DAGSHUB_USERNAME}/${DAGSHUB_REPO_NAME}.dvc
-                                
-                                # 2. On configure l'authentification
+                                # 1. Supprimer toute configuration existante pour repartir à neuf
+                                dvc remote remove origin --local || true
+                                dvc remote remove origin || true
+
+                                # 2. Ajouter le remote DagsHub de manière explicite
+                                dvc remote add -d origin ${dagshubUrl}
+
+                                # 3. Configurer l'authentification (Utiliser \$ pour les variables d'env shell)
                                 dvc remote modify origin --local auth basic
-                                dvc remote modify origin --local user $DW_USER
-                                dvc remote modify origin --local password $DW_PASS
-                                
-                                # 3. On télécharge les données
-                                dvc pull
+                                dvc remote modify origin --local user \$DW_USER
+                                dvc remote modify origin --local password \$DW_PASS
+
+                                # 4. Vérification : Afficher la config pour débugger en cas d'échec
+                                dvc remote list
+
+                                # 5. Pull des données
+                                dvc pull -v
                                 """
                             }
                         }
