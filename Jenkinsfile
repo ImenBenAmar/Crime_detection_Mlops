@@ -13,7 +13,7 @@ pipeline {
     DAGSHUB_USERNAME  = 'YomnaJL'
     DAGSHUB_REPO_NAME = 'MLOPS_Project'
     MLFLOW_TRACKING_URI = "https://dagshub.com/${DAGSHUB_USERNAME}/${DAGSHUB_REPO_NAME}.mlflow"
-    
+   
     // Variables pour simplifier les commandes
     PYTHON_PATH_CMD   = "export PYTHONPATH=\$PYTHONPATH:\$(pwd)/backend/src"
     ACTIVATE_VENV     = ". venv/bin/activate"
@@ -70,7 +70,6 @@ pipeline {
       }
     }
 
-/* ===================================================== */
     stage('4. Monitoring (Evidently)') {
       steps {
         script {
@@ -103,8 +102,7 @@ pipeline {
         }
       }
     }
-    
-    /* ===================================================== */
+
     stage('5. Conditional Retraining') {
       when {
         expression { fileExists('monitoring/drift_detected') }
@@ -121,10 +119,10 @@ pipeline {
                 pip install -r backend/src/requirements-backend.txt
                 pip install -r backend/src/requirements-train.txt
                 ${PYTHON_PATH_CMD}
-                
+               
                 export MLFLOW_TRACKING_USERNAME=${USER}
                 export MLFLOW_TRACKING_PASSWORD=${PASS}
-                
+               
                 python backend/src/trainning.py
               """
             }
