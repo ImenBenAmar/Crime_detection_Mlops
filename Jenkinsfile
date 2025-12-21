@@ -80,7 +80,7 @@ pipeline {
                 python -m venv venv
                 ${ACTIVATE_VENV}
                 pip install --upgrade pip
-                pip install -r testing/requirements-test.txt
+                pip install -r testing/requirements-testing.txt
                 ${PYTHON_PATH_CMD}
                 pytest testing/ --junitxml=test-results.xml
               """
