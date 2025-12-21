@@ -102,47 +102,60 @@ pipeline {
             withEnv(['HOME=.']) {
               sh """
                 ${ACTIVATE_VENV}
-                pip install evidently
-
-                export MLFLOW_TRACKING_USERNAME=${DAGSHUB_AUTH_USR}
-                export MLFLOW_TRACKING_PASSWORD=${DAGSHUB_AUTH_PSW}
+                pip install --upgrade pip
+                pip install "evidently>=0.5.0"
 
                 ${PYTHON_PATH_CMD}
-                python monitoring/check_drift.py || touch monitoring/drift_detected
               """
+
+              withEnv([
+                "MLFLOW_TRACKING_USERNAME=${DAGSHUB_AUTH_USR}",
+                "MLFLOW_TRACKING_PASSWORD=${DAGSHUB_AUTH_PSW}"
+              ]) {
+                sh "python monitoring/check_drift.py || touch monitoring/drift_detected"
+              }
             }
           }
         }
       }
     }
 
+
     /* ===================================================== */
     stage('5. Conditional Retraining') {
-        when {
-            expression { fileExists('monitoring/drift_detected') }
-        }
-        steps {
-            script {
-            docker.image('python:3.9-slim').inside("-u root") {
-                withEnv(['HOME=.']) {
+      when {
+        expression { fileExists('monitoring/drift_detected') }
+      }
+      steps {
+        script {
+          docker.image('python:3.9-slim').inside("-u root") {
+            withEnv(['HOME=.']) {
 
-                sh """
-                    apt-get update && apt-get install -y libgomp1
-                    ${ACTIVATE_VENV}
-                    ${PYTHON_PATH_CMD}
-                """
+              sh """
+                apt-get update && apt-get install -y libgomp1
+                python -m venv venv
+                ${ACTIVATE_VENV}
+                pip install --upgrade pip
+                pip install -r backend/src/requirements-backend.txt
+                pip install mlflow
+                ${PYTHON_PATH_CMD}
+              """
 
-                withEnv([
-                    "MLFLOW_TRACKING_USERNAME=${DAGSHUB_AUTH_USR}",
-                    "MLFLOW_TRACKING_PASSWORD=${DAGSHUB_AUTH_PSW}"
-                ]) {
-                    sh "python backend/src/trainning.py"
-                }
-                }
+              withCredentials([
+                usernamePassword(
+                  credentialsId: 'daghub-credentials',
+                  usernameVariable: 'MLFLOW_TRACKING_USERNAME',
+                  passwordVariable: 'MLFLOW_TRACKING_PASSWORD'
+                )
+              ]) {
+                sh "python backend/src/trainning.py"
+              }
             }
-            }
+          }
         }
+      }
     }
+
 
     /* ===================================================== */
     stage('6. Docker Build & Push') {

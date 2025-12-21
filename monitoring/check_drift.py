@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 # =========================
 # Evidently (NEW API)
 # =========================
+
 from evidently import Report
 from evidently.metric_preset import DataDriftPreset, DataQualityPreset
 from evidently.test_suite import TestSuite
@@ -18,6 +19,7 @@ from evidently.tests import (
     TestNumberOfColumnsWithMissingValues,
     TestShareOfDriftedColumns
 )
+
 
 # ==========================================================
 # 0. GLOBAL CONFIG
