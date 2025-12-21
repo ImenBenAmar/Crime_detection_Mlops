@@ -31,13 +31,11 @@ pipeline {
       steps {
         cleanWs()
         checkout scm
-
         script {
           env.GIT_COMMIT_HASH = sh(
             returnStdout: true,
             script: "git rev-parse --short HEAD"
           ).trim()
-
           withCredentials([
             usernamePassword(
               credentialsId: 'docker-hub-credentials',
@@ -56,7 +54,6 @@ pipeline {
       steps {
         script {
           def dagshubUrl = "https://dagshub.com/${DAGSHUB_USERNAME}/${DAGSHUB_REPO_NAME}.dvc"
-
           docker.image('iterativeai/cml:latest').inside("-u root") {
             withEnv(['HOME=.']) {
               sh """
@@ -73,7 +70,7 @@ pipeline {
     }
 
     /* ===================================================== */
-    stage('3. Tests') {
+    stage('3. Unit & Integration Tests') {
       steps {
         script {
           docker.image('python:3.9-slim').inside("-u root") {
@@ -83,8 +80,7 @@ pipeline {
                 python -m venv venv
                 ${ACTIVATE_VENV}
                 pip install --upgrade pip
-                pip install -r backend/src/requirements-backend.txt
-                pip install pytest pytest-mock flake8
+                pip install -r testing/requirements-test.txt
                 ${PYTHON_PATH_CMD}
                 pytest testing/ --junitxml=test-results.xml
               """
@@ -101,13 +97,12 @@ pipeline {
           docker.image('python:3.9-slim').inside("-u root") {
             withEnv(['HOME=.']) {
               sh """
+                python -m venv venv
                 ${ACTIVATE_VENV}
                 pip install --upgrade pip
-                pip install "evidently>=0.5.0"
-
+                pip install -r monitoring/requirements-monitoring.txt
                 ${PYTHON_PATH_CMD}
               """
-
               withEnv([
                 "MLFLOW_TRACKING_USERNAME=${DAGSHUB_AUTH_USR}",
                 "MLFLOW_TRACKING_PASSWORD=${DAGSHUB_AUTH_PSW}"
@@ -120,7 +115,6 @@ pipeline {
       }
     }
 
-
     /* ===================================================== */
     stage('5. Conditional Retraining') {
       when {
@@ -130,17 +124,15 @@ pipeline {
         script {
           docker.image('python:3.9-slim').inside("-u root") {
             withEnv(['HOME=.']) {
-
               sh """
                 apt-get update && apt-get install -y libgomp1
                 python -m venv venv
                 ${ACTIVATE_VENV}
                 pip install --upgrade pip
                 pip install -r backend/src/requirements-backend.txt
-                pip install mlflow
+                pip install -r backend/src/requirements-train.txt
                 ${PYTHON_PATH_CMD}
               """
-
               withCredentials([
                 usernamePassword(
                   credentialsId: 'daghub-credentials',
@@ -155,7 +147,6 @@ pipeline {
         }
       }
     }
-
 
     /* ===================================================== */
     stage('6. Docker Build & Push') {

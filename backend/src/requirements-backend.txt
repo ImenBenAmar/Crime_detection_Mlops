@@ -1,8 +1,8 @@
 # ==================================
-# BACKEND & ML CORE DEPENDENCIES
+# BACKEND & ML CORE DEPENDENCIES (PROD)
 # ==================================
 
-# --- Data Science & Machine Learning ---
+# --- Data Science & Machine Learning (runtime) ---
 pandas
 numpy<2.0
 scikit-learn
@@ -16,18 +16,9 @@ dagshub
 
 # --- API & Web Server ---
 fastapi
-uvicorn[standard]  # [standard] inclut des dépendances utiles comme websockets
+uvicorn[standard]
 pydantic
 
 # --- Utilities ---
-python-dotenv  # Pour gérer les variables d'environnement (.env)
-jinja2         # Souvent une dépendance indirecte de frameworks web ou de reporting
-pytest         # Pour les tests unitaires et d'intégration
-
-# --- Standard Library (pas besoin de l'ajouter, mais pour info) ---
-datetime
-deepchecks
-anywidget
-ipywidgets
-
-evidently
+python-dotenv
+jinja2

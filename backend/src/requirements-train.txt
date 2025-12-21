@@ -1,0 +1,9 @@
+pandas>=2.0
+numpy>=1.24
+scikit-learn>=1.2
+mlflow>=2.5
+xgboost>=1.7
+lightgbm
+catboost
+joblib>=1.2
+tensorflow>=2.17  
