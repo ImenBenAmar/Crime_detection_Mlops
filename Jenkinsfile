@@ -10,57 +10,40 @@ pipeline {
 
   environment {
     DOCKER_IMAGE_NAME = 'imen835/mlops-crime'
-
-    DAGSHUB_AUTH = credentials('daghub-credentials')
-    DOCKERHUB_CREDS = credentials('docker-hub-credentials')
-
     DAGSHUB_USERNAME  = 'YomnaJL'
     DAGSHUB_REPO_NAME = 'MLOPS_Project'
-
     MLFLOW_TRACKING_URI = "https://dagshub.com/${DAGSHUB_USERNAME}/${DAGSHUB_REPO_NAME}.mlflow"
-
-    ACTIVATE_VENV     = ". venv/bin/activate"
+    
+    // Variables pour simplifier les commandes
     PYTHON_PATH_CMD   = "export PYTHONPATH=\$PYTHONPATH:\$(pwd)/backend/src"
-    GIT_PYTHON_REFRESH = "quiet"
+    ACTIVATE_VENV     = ". venv/bin/activate"
   }
 
   stages {
 
-    /* ===================================================== */
     stage('1. Initialize & Docker Login') {
       steps {
         cleanWs()
         checkout scm
         script {
-          env.GIT_COMMIT_HASH = sh(
-            returnStdout: true,
-            script: "git rev-parse --short HEAD"
-          ).trim()
-          withCredentials([
-            usernamePassword(
-              credentialsId: 'docker-hub-credentials',
-              usernameVariable: 'DOCKER_USER',
-              passwordVariable: 'DOCKER_PASS'
-            )
-          ]) {
+          withCredentials([usernamePassword(credentialsId: 'docker-hub-credentials', usernameVariable: 'DOCKER_USER', passwordVariable: 'DOCKER_PASS')]) {
             sh "echo \$DOCKER_PASS | docker login -u \$DOCKER_USER --password-stdin"
           }
         }
       }
     }
 
-    /* ===================================================== */
     stage('2. Pull Data (DVC)') {
       steps {
         script {
           def dagshubUrl = "https://dagshub.com/${DAGSHUB_USERNAME}/${DAGSHUB_REPO_NAME}.dvc"
-          docker.image('iterativeai/cml:latest').inside("-u root") {
-            withEnv(['HOME=.']) {
+          withCredentials([usernamePassword(credentialsId: 'daghub-credentials', usernameVariable: 'DVC_USER', passwordVariable: 'DVC_PASS')]) {
+            docker.image('iterativeai/cml:latest').inside("-u root") {
               sh """
                 dvc remote add -d -f origin ${dagshubUrl}
                 dvc remote modify origin --local auth basic
-                dvc remote modify origin --local user ${DAGSHUB_AUTH_USR}
-                dvc remote modify origin --local password ${DAGSHUB_AUTH_PSW}
+                dvc remote modify origin --local user ${DVC_USER}
+                dvc remote modify origin --local password ${DVC_PASS}
                 dvc pull -v
               """
             }
@@ -69,22 +52,19 @@ pipeline {
       }
     }
 
-    /* ===================================================== */
     stage('3. Unit & Integration Tests') {
       steps {
         script {
           docker.image('python:3.9-slim').inside("-u root") {
-            withEnv(['HOME=.']) {
-              sh """
-                apt-get update && apt-get install -y libgomp1
-                python -m venv venv
-                ${ACTIVATE_VENV}
-                pip install --upgrade pip
-                pip install -r testing/requirements-testing.txt
-                ${PYTHON_PATH_CMD}
-                pytest testing/ --junitxml=test-results.xml
-              """
-            }
+            sh """
+              apt-get update && apt-get install -y libgomp1
+              python -m venv venv
+              ${ACTIVATE_VENV}
+              pip install --upgrade pip
+              pip install -r testing/requirements-testing.txt
+              ${PYTHON_PATH_CMD}
+              pytest testing/ --junitxml=test-results.xml
+            """
           }
         }
       }
@@ -132,7 +112,7 @@ pipeline {
       steps {
         script {
           docker.image('python:3.9-slim').inside("-u root") {
-            withEnv(['HOME=.']) {
+            withCredentials([usernamePassword(credentialsId: 'daghub-credentials', usernameVariable: 'USER', passwordVariable: 'PASS')]) {
               sh """
                 apt-get update && apt-get install -y libgomp1
                 python -m venv venv
@@ -141,23 +121,18 @@ pipeline {
                 pip install -r backend/src/requirements-backend.txt
                 pip install -r backend/src/requirements-train.txt
                 ${PYTHON_PATH_CMD}
+                
+                export MLFLOW_TRACKING_USERNAME=${USER}
+                export MLFLOW_TRACKING_PASSWORD=${PASS}
+                
+                python backend/src/trainning.py
               """
-              withCredentials([
-                usernamePassword(
-                  credentialsId: 'daghub-credentials',
-                  usernameVariable: 'MLFLOW_TRACKING_USERNAME',
-                  passwordVariable: 'MLFLOW_TRACKING_PASSWORD'
-                )
-              ]) {
-                sh "python backend/src/trainning.py"
-              }
             }
           }
         }
       }
     }
 
-    /* ===================================================== */
     stage('6. Docker Build & Push') {
       steps {
         script {
@@ -175,13 +150,10 @@ pipeline {
       }
     }
 
-    /* ===================================================== */
     stage('7. Kubernetes Deploy') {
       steps {
         script {
-          withCredentials([
-            file(credentialsId: 'kubeconfig-secret', variable: 'KUBECONFIG')
-          ]) {
+          withCredentials([file(credentialsId: 'kubeconfig-secret', variable: 'KUBECONFIG')]) {
             sh """
               sed -i 's|REPLACE_ME_BACKEND_IMAGE|${DOCKER_IMAGE_NAME}:backend-latest|g' k8s/backend-deployment.yml
               sed -i 's|REPLACE_ME_FRONTEND_IMAGE|${DOCKER_IMAGE_NAME}:frontend-latest|g' k8s/frontend-deployment.yml
@@ -200,16 +172,9 @@ pipeline {
   post {
     always {
       script {
-        if (fileExists('test-results.xml')) {
-          junit 'test-results.xml'
-        }
-
-        if (fileExists('monitoring/monitoring_drift_report.html')) {
-          archiveArtifacts artifacts: 'monitoring/monitoring_drift_report.html'
-        }
-
+        if (fileExists('test-results.xml')) { junit 'test-results.xml' }
+        // On nettoie les fichiers de trigger pour le prochain build
         sh "rm -rf venv monitoring/drift_detected || true"
-        sh "docker logout || true"
       }
     }
   }
