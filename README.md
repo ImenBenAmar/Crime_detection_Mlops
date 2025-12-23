@@ -178,6 +178,13 @@ Le fichier [Jenkinsfile](Jenkinsfile) orchestre un pipeline automatisé de 7 sta
 
 ### 📊 Vue d'ensemble du Pipeline
 
+<div align="center">
+
+![Jenkins Pipeline](docs/jenkins/jenkins_pipe.png)
+*Pipeline Jenkins avec 7 stages automatisés*
+
+</div>
+
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    JENKINS CI/CD PIPELINE                           │
@@ -352,6 +359,22 @@ post {
   }
 }
 ```
+
+### 📸 Screenshots Jenkins
+
+<div align="center">
+
+| Jenkins Workspace | Test Results | DVC Tracking |
+|-------------------|--------------|-------------|
+| ![Workspace](docs/jenkins/jenkins_workspace.png) | ![Tests](docs/jenkins/tests.png) | ![DVC](docs/jenkins/traking_dvc.png) |
+
+**Monitoring Drift Detection:**
+
+| Drift Detected | No Drift | Reports |
+|----------------|----------|----------|
+| ![Drift Detected](docs/jenkins/drift_detected.png) | ![No Drift](docs/jenkins/no_drift.png) | ![Reports](docs/jenkins/reports.png) |
+
+</div>
 
 ---
 
@@ -532,6 +555,24 @@ pip install -r requirements-frontend.txt
 streamlit run app.py
 ```
 
+### 3️⃣-bis Résultats des Tests
+
+<div align="center">
+
+| Preprocessing Tests | Model Loading | API Testing |
+|---------------------|---------------|-------------|
+| ![Preprocessing](docs/preprocessing_test.png) | ![Model Loading](docs/test%20model%20loading.png) | ![API Test](docs/test_api.png) |
+
+**MLflow Integration & Training:**
+
+| MLflow Connection | Training Results |
+|-------------------|------------------|
+| ![MLflow](docs/test_connexion_mlfow.png) | ![Training](docs/trainning.png) |
+
+</div>
+
+---
+
 ### 4️⃣ Configuration Jenkins
 
 #### A. Installer les Plugins Requis
@@ -646,6 +687,19 @@ dvc pull
 ### 1. Evidently AI - Data Drift Detection
 
 Le système surveille automatiquement 3 types de drift :
+
+<div align="center">
+
+**Rapports de Drift Générés:**
+
+| Data Drift Overview | Drift Analysis | Feature Drift Details |
+|---------------------|----------------|----------------------|
+| ![Drift Overview](docs/drift/data%20drift.png) | ![Drift 2](docs/drift/data%20drift2.png) | ![Drift Details](docs/drift/drift.png) |
+
+![Extended Drift Analysis](docs/drift/drift2.png)
+*Analyse complète du drift avec métriques par feature*
+
+</div>
 
 #### A. Data Drift (Distribution des Features)
 ```python
