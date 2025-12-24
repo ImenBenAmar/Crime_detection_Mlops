@@ -4,19 +4,19 @@ Colle le bloc ci‑dessous tel quel dans un fichier Markdown compatible Mermaid 
 
 ```mermaid
 graph LR
-  subgraph Cluster["Kubernetes Cluster (minikube) — Node IP: 192.168.49.2"]
+  subgraph Cluster["Kubernetes Cluster (minikube) - Node IP: 192.168.49.2"]
     direction TB
 
     subgraph Deployments["Deployments"]
       direction LR
-      BE_DEP[backend-deployment (replicas: 3)]
-      FE_DEP[frontend-deployment (replicas: 3)]
+  BE_DEP["backend-deployment (replicas: 3)"]
+  FE_DEP["frontend-deployment (replicas: 3)"]
     end
 
     subgraph ReplicaSets["ReplicaSets (contrôlés par Deployments)"]
       direction LR
-      BE_RS[ReplicaSet backend-deployment-7bcc8b665f]
-      FE_RS[ReplicaSet frontend-deployment-75849d4d7f]
+  BE_RS["ReplicaSet backend-deployment-7bcc8b665f"]
+  FE_RS["ReplicaSet frontend-deployment-75849d4d7f"]
     end
 
     subgraph Pods["Pods (exemples réels)"]
@@ -32,8 +32,8 @@ graph LR
 
     subgraph Services["Services"]
       direction TB
-      BACK_SVC["backend-service\nType: ClusterIP\nClusterIP: 10.99.255.133\nPort: 5000"]
-      FRONT_SVC["frontend-service\nType: NodePort\nClusterIP: 10.111.51.73\nPort: 8501 → NodePort: 30001"]
+  BACK_SVC["backend-service\nType: ClusterIP\nClusterIP: 10.99.255.133\nPort: 5000"]
+  FRONT_SVC["frontend-service\nType: NodePort\nClusterIP: 10.111.51.73\nPort: 8501 -> NodePort: 30001"]
     end
 
     subgraph Node["Node (minikube)\nExternal IP: 192.168.49.2"]
