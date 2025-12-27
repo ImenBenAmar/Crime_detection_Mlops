@@ -887,12 +887,7 @@ Le modèle classifie 15 catégories principales :
 | **Lead Time for Changes** | < 30min | - |
 | **Mean Time to Recovery** | < 15min | < 30min |
 
-### Infrastructure Costs (Estimation)
 
-- **Compute K8s** : ~$50/mois (2 nodes)
-- **Storage DagsHub** : Gratuit (< 10GB)
-- **Docker Hub** : Gratuit (public images)
-- **Total** : ~$50/mois 💰
 
 ---
 
