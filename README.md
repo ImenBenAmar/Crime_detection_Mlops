@@ -939,13 +939,13 @@ Ce projet illustre une maîtrise complète des concepts MLOps modernes :
 <td align="center">
 <img src="https://github.com/YomnaJL.png" width="100px;" alt="Yomna JL"/><br />
 <b>Yomna JL</b><br />
-<i> Data scienc Engineer</i><br />
+<i> Data science Engineer</i><br />
 <a href="https://github.com/YomnaJL">GitHub</a> | <a href="https://linkedin.com/in/yomna-jl">LinkedIn</a>
 </td>
 <td align="center">
 <img src="https://github.com/fakhfakheya.png" width="100px;" alt="Eya Fakhfakh"/><br />
 <b>Eya Fakhfakh</b><br />
-<i> Data scienc Engineer</i><br />
+<i> Data science Engineer</i><br />
 <a href="https://github.com/fakhfakheya">GitHub</a> | <a href="https://linkedin.com/in/eya-fakhfakh">LinkedIn</a>
 </td>
 </tr>
