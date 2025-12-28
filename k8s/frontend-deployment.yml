@@ -36,12 +36,12 @@ spec:
           limits:
             memory: "512Mi"
             cpu: "500m"
-
         livenessProbe:
-          tcpSocket:
-            port: 8501
-          initialDelaySeconds: 10
-          periodSeconds: 15
+          httpGet:
+            path: /health 
+            port: 5000
+          initialDelaySeconds: 20 # Laisse le temps au modèle ML de charger
+          periodSeconds: 30
 
 ---
 apiVersion: v1
